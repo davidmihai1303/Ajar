@@ -41,10 +41,14 @@ export async function connect(): Promise<boolean> {
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+// Demo only: open the app with ?fresh to start from an empty history (welcome screen first).
+// The demo history appears after the first scan and disappears again on "delete my history".
+let demoHasHistory = !new URLSearchParams(window.location.search).has("fresh");
+
 export const api = {
   network: (): Promise<NetworkInfo> => (demo ? Promise.resolve(demoNetwork) : request("/api/network")),
 
-  history: (): Promise<HistoryItem[]> => (demo ? Promise.resolve(demoHistory()) : request("/api/history")),
+  history: (): Promise<HistoryItem[]> => (demo ? Promise.resolve(demoHasHistory ? demoHistory() : []) : request("/api/history")),
 
   scan: (id: string): Promise<Scan> =>
     demo ? Promise.resolve(demoScans.find((scan) => scan.id === id) ?? demoScans[0]) : request(`/api/scans/${encodeURIComponent(id)}`),
@@ -58,6 +62,7 @@ export const api = {
   startScan: async (): Promise<Scan> => {
     if (demo) {
       await wait(6000);
+      demoHasHistory = true;
       return demoScans[0];
     }
     return request("/api/scans", {
@@ -70,6 +75,7 @@ export const api = {
   importFiles: async (files: File[]): Promise<ImportResult[]> => {
     if (demo) {
       await wait(800);
+      demoHasHistory = true;
       return Promise.all(
         files.map(async (file) => {
           const text = await file.text();
@@ -85,7 +91,13 @@ export const api = {
     return request("/api/scans/import", { method: "POST", body: form });
   },
 
-  deleteHistory: (): Promise<void> => (demo ? Promise.resolve() : request("/api/history", { method: "DELETE" })),
+  deleteHistory: (): Promise<void> => {
+    if (demo) {
+      demoHasHistory = false;
+      return Promise.resolve();
+    }
+    return request("/api/history", { method: "DELETE" });
+  },
 
   explain: (code: string, lang: Lang): Promise<Explanation> =>
     demo ? Promise.resolve(demoExplanation(code, lang)) : request(`/api/explain/${encodeURIComponent(code)}?lang=${lang}`),
