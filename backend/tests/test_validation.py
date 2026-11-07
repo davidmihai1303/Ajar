@@ -62,3 +62,28 @@ def test_cli_masks_mac_in_filenames_even_on_errors(tmp_path, capsys):
     assert "D8:43:AE:xx:xx:xx" in capsys.readouterr().err
     assert main(["analyze", str(tmp_path)]) == 0
     assert "printer-D8:43:AE:xx:xx:xx.xml,ERROR" in (tmp_path / "scores.csv").read_text()
+
+
+def test_masked_name_collisions_match_across_csvs_and_single_file_cli(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "DEFAULT_LANG", "en")
+    stem = "scan-02:00:00:xx:xx:xx"
+    inputs = [
+        ("scan-02-00-00-00-00-02.xml", "V3_small_office.xml", f"{stem} (3).xml", "45"),
+        ("scan-02-00-00-00-00-01 (2).xml", "V7_broken.xml", f"{stem} (2).xml", "ERROR"),
+        ("scan-02-00-00-00-00-01.xml", "V1_home_basic.xml", f"{stem}.xml", "90"),
+    ]
+    for raw, fixture, _, _ in inputs:
+        (tmp_path / raw).write_bytes((FIXTURES / fixture).read_bytes())
+    for _ in range(2):
+        assert main(["analyze", str(tmp_path)]) == 0
+        with (tmp_path / "scores.csv").open(newline="") as f:
+            assert list(csv.reader(f))[1:] == sorted([[label, score] for _, _, label, score in inputs])
+        with (tmp_path / "findings.csv").open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert {row["file"] for row in rows} == {inputs[0][2], inputs[2][2]}
+        assert all(row["file"] == inputs[2][2] for row in rows if row["finding_code"] == "HTTP_ADMIN_CLEARTEXT")
+    capsys.readouterr()
+    for raw, _, label, score in inputs:
+        assert main(["analyze-file", str(tmp_path / raw)]) == (1 if score == "ERROR" else 0)
+        result = capsys.readouterr()
+        assert label in (result.err if score == "ERROR" else result.out)
