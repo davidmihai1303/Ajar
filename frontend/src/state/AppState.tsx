@@ -7,7 +7,11 @@ import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
 export type ScanProblem = { kind: "refused"; refusal: ScanRefusal } | { kind: "agent" } | { kind: "failed" };
-export type AjarPlacement = "corner" | "dialog" | "center";
+export type AjarPlacement = "corner" | "dialog" | "center" | "anchor";
+export interface AjarAnchor {
+  x: number;
+  y: number;
+}
 
 // Small per-viewer conveniences only (language, collapsed sidebar, one-time notices).
 const store = {
@@ -53,6 +57,8 @@ interface AppState {
   dialogs: number;
   openDialog: () => () => void;
   placement: AjarPlacement;
+  anchor: AjarAnchor | null;
+  setAnchor: (value: AjarAnchor | null) => void;
   bubble: string | null;
   setBubble: (text: string | null) => void;
   refreshNetwork: () => Promise<void>;
@@ -88,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [dialogs, setDialogs] = useState(0);
   const [bubble, setBubble] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<AjarAnchor | null>(null);
   const t = useMemo(() => makeT(lang), [lang]);
   const scanRef = useRef<Scan | null>(null);
   scanRef.current = scan;
@@ -236,7 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     navigate({ name: "home" });
   }, []);
 
-  const placement: AjarPlacement = dialogs > 0 ? "dialog" : scanning ? "center" : "corner";
+  const placement: AjarPlacement = dialogs > 0 ? "dialog" : scanning ? "center" : anchor ? "anchor" : "corner";
 
   const value: AppState = {
     lang,
@@ -264,6 +271,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dialogs,
     openDialog,
     placement,
+    anchor,
+    setAnchor,
     bubble,
     setBubble,
     refreshNetwork,

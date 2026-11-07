@@ -1,11 +1,11 @@
 // Ajar never disappears: one fixed element for the whole app. It moves (animated) between
-// the top-left corner, the side of an open dialog and the centre of the screen during a scan.
+// the top-left corner, the welcome text, the side of an open dialog and the centre during a scan.
 import { useApp } from "../state/AppState";
 import { mascotState, scoreLevel } from "../lib/scan";
 import AjarMascot from "./AjarMascot";
 
 export default function AjarDock() {
-  const { scan, scanning, ready, placement, bubble, setBubble, t } = useApp();
+  const { scan, scanning, ready, placement, anchor, bubble, setBubble, t } = useApp();
   const score = scan?.score ?? null;
   // Until the last scan has loaded, Ajar waits calmly instead of flashing "locked".
   const state = scanning || !ready ? "shut" : mascotState(score);
@@ -13,7 +13,10 @@ export default function AjarDock() {
   const label = t(`ajar.state.${state}`) + (score === null ? "" : `, ${t("score.outOf", { score })}`);
 
   return (
-    <div className={`ajar-dock place-${placement}`}>
+    <div
+      className={`ajar-dock place-${placement}`}
+      style={placement === "anchor" && anchor ? { transform: `translate(${anchor.x}px, ${anchor.y}px)` } : undefined}
+    >
       <button
         type="button"
         className="ajar-dock-button"
@@ -42,7 +45,7 @@ export default function AjarDock() {
           </>
         )}
       </div>
-      {bubble && placement === "corner" && (
+      {bubble && (placement === "corner" || placement === "dialog") && (
         <div className="ajar-bubble" role="status">
           {bubble}
           <button type="button" className="link-button" onClick={() => setBubble(null)} aria-label={t("common.close")}>

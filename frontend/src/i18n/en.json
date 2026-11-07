@@ -215,5 +215,10 @@
   "history.itemDevice": "New device on the network: {ip}",
   "history.itemGone": "Device no longer seen: {ip}",
   "history.itemPortsClosed": "Doors closed: {count}",
-  "history.itemPortsOpened": "New doors opened: {count}"
+  "history.itemPortsOpened": "New doors opened: {count}",
+  "perm.consent.bubble": "I only look at what is connected. I change nothing.",
+  "perm.admin.bubble": "I need your permission only for the scan.",
+  "perm.network.bubble": "I need to see the network to find the doors.",
+  "perm.notify.bubble": "I can tell you when something new shows up.",
+  "perm.ai.bubble": "Ask me anything about your scan."
 }

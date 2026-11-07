@@ -215,5 +215,10 @@
   "history.itemDevice": "Dispozitiv nou în rețea: {ip}",
   "history.itemGone": "Dispozitiv care nu mai apare: {ip}",
   "history.itemPortsClosed": "Uși închise: {count}",
-  "history.itemPortsOpened": "Uși noi deschise: {count}"
+  "history.itemPortsOpened": "Uși noi deschise: {count}",
+  "perm.consent.bubble": "Verific doar ce e conectat, nu schimb nimic.",
+  "perm.admin.bubble": "Am nevoie de permisiunea ta doar pentru scanare.",
+  "perm.network.bubble": "Trebuie să văd rețeaua ca să găsesc ușile.",
+  "perm.notify.bubble": "Te pot anunța când apare ceva nou.",
+  "perm.ai.bubble": "Întreabă-mă orice despre scanarea ta."
 }

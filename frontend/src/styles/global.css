@@ -312,7 +312,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 
 /* Smaller screens */
 @media (max-width: 1000px) {
-  .ajar-bubble { display: none; }
+  .ajar-dock.place-corner .ajar-bubble { display: none; }
   :root { --sidebar-w: 248px; }
   .main { padding: 28px 24px 64px; }
   .app.sidebar-hidden .main { padding-left: calc(var(--ajar-x) + var(--ajar-w) + 24px); }
@@ -325,3 +325,11 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
   .welcome-title { font-size: 34px; }
 }
 .recent-score { padding: 0 10px; min-width: 44px; justify-content: center; font-variant-numeric: tabular-nums; }
+
+/* Welcome (V1): the text column sits in the exact centre; Ajar is anchored to its left */
+.welcome-column { display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center; width: 100%; max-width: 680px; }
+@media (min-width: 900px) { .welcome-title { white-space: nowrap; } .welcome-column { width: auto; max-width: none; } .welcome-column .composer { width: 620px; } }
+.welcome-sub { margin: 0 auto; }
+
+/* Dialog (V3): Ajar stands 20% larger beside the centred dialog and speaks from above */
+.ajar-dock.place-dialog .ajar-bubble { left: auto; right: 0; top: auto; bottom: calc(100% + 6px); max-width: 220px; border-radius: 14px 14px 4px 14px; }

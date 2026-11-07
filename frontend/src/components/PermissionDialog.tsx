@@ -1,5 +1,5 @@
 // Permission and consent dialogs: confirm scan, admin rights, local network, notifications, AI assistant.
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useApp } from "../state/AppState";
 import Dialog from "./Dialog";
 import { IconAsk, IconBell, IconLock, IconShield, IconWifi } from "./Icons";
@@ -18,7 +18,12 @@ const POINTS: Record<PermissionKind, number> = { consent: 2, admin: 3, network: 
 const HAS_NOTE: Record<PermissionKind, boolean> = { consent: false, admin: true, network: true, notify: false, ai: true };
 
 export default function PermissionDialog({ kind, onAccept, onCancel }: { kind: PermissionKind; onAccept: () => void; onCancel: () => void }) {
-  const { t, network } = useApp();
+  const { t, network, setBubble } = useApp();
+  // Ajar walks over to the dialog and says why it is asking.
+  useEffect(() => {
+    setBubble(t(`perm.${kind}.bubble`));
+    return () => setBubble(null);
+  }, [kind, setBubble, t]);
   const [owned, setOwned] = useState(false);
   const [missing, setMissing] = useState(false);
   const prefix = `perm.${kind}`;
