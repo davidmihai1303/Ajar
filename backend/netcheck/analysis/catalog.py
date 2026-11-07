@@ -1,6 +1,5 @@
 """Official finding catalog as DATA: code -> severity, points, matching services. Single source of truth."""
 from dataclasses import dataclass
-from typing import FrozenSet, Optional
 
 
 @dataclass(frozen=True)
@@ -8,7 +7,7 @@ class CatalogEntry:
     code: str
     severity: str  # lowercase: "high", "medium", "low", "info"
     points: int
-    services: FrozenSet[str] = frozenset()
+    services: frozenset[str] = frozenset()
     udp_only: bool = False
 
 

@@ -1,68 +1,50 @@
-"""CLI entry point: `netcheck analyze <folder> --out <dir>` (FR-05, FR-15), `netcheck serve`."""
+"""Offline scan analysis commands for the folder export and single-file jury check."""
 import argparse
 import sys
-from netcheck.analysis.export import export_folder
-from netcheck.analysis.parser import parse_xml_file
+from pathlib import Path
+
+from netcheck import config
+from netcheck.analysis.export import analyze_file, export_folder
+from netcheck.analysis.privacy import mask_macs_in_text
 
 
-def cmd_analyze(args: argparse.Namespace) -> int:
-    out_dir = args.out or args.folder
-    try:
-        findings_path, scores_path = export_folder(args.folder, out_dir)
-        print(f"Export completed:")
-        print(f"  Findings: {findings_path}")
-        print(f"  Scores:   {scores_path}")
-        return 0
-    except Exception as e:
-        print(f"Error during analysis: {e}", file=sys.stderr)
-        return 1
+def _text(ro: str, en: str) -> str:
+    return ro if config.DEFAULT_LANG == "ro" else en
 
 
-def cmd_analyze_file(args: argparse.Namespace) -> int:
-    result = parse_xml_file(args.file)
-    if result.error:
-        print(f"ERROR: Could not parse '{args.file}'", file=sys.stderr)
-        return 1
-    print(f"File: {result.file}")
-    print(f"Score: {result.score}")
-    print(f"Findings ({len(result.findings)}):")
-    for f in result.findings:
-        port_str = f":{f.port}" if f.port is not None else ""
-        print(f"  - [{f.severity.upper()}] {f.ip}{port_str} -> {f.finding_code}")
-    return 0
-
-
-def cmd_serve(args: argparse.Namespace) -> int:
-    import uvicorn
-    uvicorn.run("netcheck.api.app:app", host="127.0.0.1", port=8001)
-    return 0
-
-
-def main(argv: list[str] | None = None) -> None:
-    if argv is None:
-        argv = sys.argv[1:]
-
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="netcheck")
-    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    folder = subparsers.add_parser("analyze", help=_text("Analizează un dosar XML", "Analyze a folder of XML scans"))
+    folder.add_argument("folder", type=Path)
+    folder.add_argument("--out", "-o", type=Path, help=_text("Dosarul pentru CSV", "Directory for CSV output"))
+    single = subparsers.add_parser("analyze-file", help=_text("Analizează un fișier XML", "Analyze one XML scan"))
+    single.add_argument("file", type=Path)
+    args = parser.parse_args(argv)
 
-    # analyze
-    p_analyze = subparsers.add_parser("analyze", help="Analyze folder of XML files and output CSVs")
-    p_analyze.add_argument("folder", help="Path to folder containing XML files")
-    p_analyze.add_argument("--out", "-o", default="", help="Output directory for CSVs (defaults to folder)")
-    p_analyze.set_defaults(func=cmd_analyze)
+    if args.command == "analyze":
+        try:
+            paths = export_folder(args.folder, args.out or args.folder, max_bytes=config.MAX_XML_BYTES)
+        except OSError as exc:
+            print(_text("Eroare la export", "Export failed"), mask_macs_in_text(str(exc)), file=sys.stderr)
+            return 1
+        for path in paths:
+            print(mask_macs_in_text(path))
+        return 0
 
-    # analyze-file
-    p_file = subparsers.add_parser("analyze-file", help="Analyze single XML file and print findings")
-    p_file.add_argument("file", help="Path to XML file")
-    p_file.set_defaults(func=cmd_analyze_file)
-
-    # serve
-    p_serve = subparsers.add_parser("serve", help="Run the local web API server")
-    p_serve.set_defaults(func=cmd_serve)
-
-    parsed = parser.parse_args(argv)
-    sys.exit(parsed.func(parsed))
+    scan, findings, score = analyze_file(args.file, max_bytes=config.MAX_XML_BYTES)
+    if not scan.ok:
+        print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), scan.file,
+              file=sys.stderr)
+        return 1
+    print(f"{_text('Fișier', 'File')}: {scan.file}")
+    print(f"{_text('Scor', 'Score')}: {score}")
+    print(f"{_text('Constatări', 'Findings')}: {len(findings)}")
+    for finding in findings:
+        endpoint = finding.ip if finding.port is None else f"{finding.ip} {finding.protocol}/{finding.port}"
+        print(f"  {endpoint} {finding.code} ({finding.severity})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

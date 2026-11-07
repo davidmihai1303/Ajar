@@ -1,7 +1,8 @@
 """Rule traps: tunnel=ssl, filtered, open|filtered UDP, SMB 139+445, UNKNOWN_DEVICE, outdated versions."""
 import unittest
 from netcheck.analysis.models import Device, Port
-from netcheck.analysis.rules import evaluate_device
+from netcheck.analysis.rules import evaluate_device, evaluate_devices
+from netcheck.analysis.scoring import compute_score
 from netcheck.analysis.versions import is_outdated_service
 
 
@@ -13,11 +14,11 @@ class TestRules(unittest.TestCase):
             vendor="Ubiquiti",
             hostname="ap",
             ports=[
-                Port(portid=8443, protocol="tcp", state="open", service_name="http", tunnel="ssl", http_title="Admin Login")
+                Port(port=8443, protocol="tcp", state="open", service="http", tunnel="ssl", scripts={"http-title": "Admin Login"})
             ]
         )
-        findings = evaluate_device("test.xml", dev)
-        self.assertFalse(any(f.finding_code == "HTTP_ADMIN_CLEARTEXT" for f in findings))
+        findings = evaluate_device(dev)
+        self.assertFalse(any(f.code == "HTTP_ADMIN_CLEARTEXT" for f in findings))
 
     def test_filtered_and_closed_ports_ignored(self):
         """Only ports with state='open' can produce findings."""
@@ -26,12 +27,12 @@ class TestRules(unittest.TestCase):
             vendor="Dell",
             hostname="db",
             ports=[
-                Port(portid=3306, protocol="tcp", state="filtered", service_name="mysql"),
-                Port(portid=23, protocol="tcp", state="closed", service_name="telnet"),
-                Port(portid=161, protocol="udp", state="open|filtered", service_name="snmp"),
+                Port(port=3306, protocol="tcp", state="filtered", service="mysql"),
+                Port(port=23, protocol="tcp", state="closed", service="telnet"),
+                Port(port=161, protocol="udp", state="open|filtered", service="snmp"),
             ]
         )
-        findings = evaluate_device("test.xml", dev)
+        findings = evaluate_device(dev)
         self.assertEqual(len(findings), 0)
 
     def test_smb_one_per_device_prefers_445(self):
@@ -41,12 +42,12 @@ class TestRules(unittest.TestCase):
             vendor="Synology",
             hostname="nas",
             ports=[
-                Port(portid=139, protocol="tcp", state="open", service_name="netbios-ssn"),
-                Port(portid=445, protocol="tcp", state="open", service_name="microsoft-ds"),
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn"),
+                Port(port=445, protocol="tcp", state="open", service="microsoft-ds"),
             ]
         )
-        findings = evaluate_device("test.xml", dev)
-        smb_findings = [f for f in findings if f.finding_code == "SMB_EXPOSED"]
+        findings = evaluate_device(dev)
+        smb_findings = [f for f in findings if f.code == "SMB_EXPOSED"]
         self.assertEqual(len(smb_findings), 1)
         self.assertEqual(smb_findings[0].port, 445)
 
@@ -57,28 +58,46 @@ class TestRules(unittest.TestCase):
             vendor="Synology",
             hostname="nas2",
             ports=[
-                Port(portid=139, protocol="tcp", state="open", service_name="netbios-ssn"),
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn"),
             ]
         )
-        findings = evaluate_device("test.xml", dev)
-        smb_findings = [f for f in findings if f.finding_code == "SMB_EXPOSED"]
+        findings = evaluate_device(dev)
+        smb_findings = [f for f in findings if f.code == "SMB_EXPOSED"]
         self.assertEqual(len(smb_findings), 1)
         self.assertEqual(smb_findings[0].port, 139)
 
-    def test_smb_outdated_only_once_on_chosen_port(self):
-        """Outdated Samba 3.x on both 139 and 445 reports SMB_EXPOSED and OUTDATED_SERVICE once on 445."""
+    def test_outdated_is_per_port_and_smb_exposure_is_per_device(self):
+        """Report the version evidence on each port and the SMB exposure once."""
         dev = Device(
             ip="192.168.1.22",
             vendor="Synology",
             hostname="old-nas",
             ports=[
-                Port(portid=139, protocol="tcp", state="open", service_name="netbios-ssn", product="Samba smbd", version="3.0.24"),
-                Port(portid=445, protocol="tcp", state="open", service_name="microsoft-ds", product="Samba smbd", version="3.0.24"),
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn", product="Samba smbd", version="3.0.24"),
+                Port(port=445, protocol="tcp", state="open", service="microsoft-ds", product="Samba smbd", version="3.0.24"),
             ]
         )
-        findings = evaluate_device("test.xml", dev)
-        codes = [(f.port, f.finding_code) for f in findings]
-        self.assertEqual(codes, [(445, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
+        findings = evaluate_device(dev)
+        codes = [(f.port, f.code) for f in findings]
+        self.assertEqual(codes, [(139, "OUTDATED_SERVICE"), (445, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
+
+    def test_smb_version_on_139_survives_selecting_445_for_exposure(self):
+        device = Device(ip="192.0.2.1", hostname="nas", ports=(
+            Port("tcp", 139, "open", "netbios-ssn", "Samba smbd", "3.0.24"),
+            Port("tcp", 445, "open", "microsoft-ds"),
+        ))
+        findings = evaluate_device(device)
+        self.assertEqual([(f.port, f.code) for f in findings], [(139, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
+        self.assertEqual(compute_score(findings), 70)
+
+    def test_same_csv_finding_across_transports_or_host_records_counts_once(self):
+        tcp = Port("tcp", 554, "open", "rtsp")
+        udp = Port("udp", 554, "open", "rtsp")
+        hosts = [Device(ip="192.0.2.1", ports=(udp,)), Device(ip="192.0.2.1", hostname="camera", ports=(tcp, udp))]
+        findings = evaluate_devices(hosts)
+        self.assertEqual([(f.port, f.protocol, f.code) for f in findings], [(554, "tcp", "CAMERA_STREAM_EXPOSED")])
+        self.assertEqual(compute_score(findings), 80)
+        self.assertEqual(findings, evaluate_devices(reversed(hosts)))
 
     def test_upnp_and_snmp_udp_only(self):
         """UPNP_EXPOSED and SNMP_EXPOSED only trigger on UDP, never on TCP."""
@@ -87,11 +106,11 @@ class TestRules(unittest.TestCase):
             vendor="TP-Link",
             hostname="router",
             ports=[
-                Port(portid=1900, protocol="tcp", state="open", service_name="upnp"),
-                Port(portid=161, protocol="tcp", state="open", service_name="snmp"),
+                Port(port=1900, protocol="tcp", state="open", service="upnp"),
+                Port(port=161, protocol="tcp", state="open", service="snmp"),
             ]
         )
-        findings = evaluate_device("test.xml", dev)
+        findings = evaluate_device(dev)
         self.assertEqual(len(findings), 0)
 
     def test_unknown_device_rule(self):
@@ -101,11 +120,11 @@ class TestRules(unittest.TestCase):
             vendor="",
             hostname="",
             ports=[
-                Port(portid=8888, protocol="tcp", state="open", service_name="sun-answerbook")
+                Port(port=8888, protocol="tcp", state="open", service="sun-answerbook")
             ]
         )
-        findings = evaluate_device("test.xml", dev)
-        unknown = [f for f in findings if f.finding_code == "UNKNOWN_DEVICE"]
+        findings = evaluate_device(dev)
+        unknown = [f for f in findings if f.code == "UNKNOWN_DEVICE"]
         self.assertEqual(len(unknown), 1)
         self.assertIsNone(unknown[0].port)
         self.assertEqual(unknown[0].points, 5)
