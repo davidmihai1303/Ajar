@@ -84,6 +84,12 @@ gitleaks detect --source . --no-banner           # must be clean
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
 - Never produce or change findings, severities or scores.
 - Always fall back to `explain/static.py` on error or timeout.
+- Every output must pass `find_ungrounded()` and the sentence/step limits before it is shown. Never
+  bypass the check; if the model is rejected too often, change the prompt, not the check.
+- Privacy: a non-local endpoint stays disabled unless `LLM_ALLOW_REMOTE=1`, and hostnames are never
+  sent to it. Never send MAC addresses to any LLM.
+- Banners, titles and hostnames go to the model only as cleaned JSON data, never inside instructions.
+- Tests: `docker compose run --rm app pytest -q tests/test_llm.py` (mock server, no real model needed).
 
 ## User-facing text
 

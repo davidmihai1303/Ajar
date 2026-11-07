@@ -193,6 +193,8 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_BASE_URL` | empty | OpenAI-compatible endpoint, e.g. `http://127.0.0.1:8080/v1`. Empty = built-in texts only |
 | `LLM_API_KEY` | empty | only if the endpoint needs one; never committed |
 | `LLM_MODEL` | empty | model name sent to the endpoint |
+| `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
+| `LLM_ALLOW_REMOTE` | `0` | `1` allows a non-local endpoint; hostnames are still never sent to it |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
 
