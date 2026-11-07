@@ -22,15 +22,8 @@ import re
 from typing import Optional
 from xml.etree.ElementTree import Element, ParseError
 
-try:
-    from defusedxml import DefusedXmlException
-    from defusedxml import ElementTree as SafeET
-except ImportError:  # pragma: no cover
-    import xml.etree.ElementTree as SafeET
-
-    class DefusedXmlException(Exception):
-        pass
-
+from defusedxml import DefusedXmlException
+from defusedxml import ElementTree as SafeET
 
 from .catalog import HTTP_ADMIN_TITLE
 from .device_type import guess_device_type

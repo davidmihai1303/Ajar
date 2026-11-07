@@ -1,8 +1,20 @@
 """Parser tests: Validation Set facts, hostile and broken input, MAC masking, determinism (FR-05, NFR-02, NFR-03, NFR-05)."""
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+
+def test_parser_requires_defusedxml():
+    result = subprocess.run(
+        [sys.executable, "-S", "-c",
+         "import sys; sys.modules['defusedxml'] = None; import netcheck.analysis.parser"],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "defusedxml" in result.stderr
 
 from netcheck.analysis.models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                                       Device, ScanResult)
