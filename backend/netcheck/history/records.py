@@ -54,6 +54,11 @@ class ScanRecord:
     # False when the old database stored neither a ledger nor enough evidence to reconstruct it.
     findings_available: bool = field(default=True, kw_only=True)
 
+    source: str | None = field(default=None, kw_only=True)
+    ssid: str | None = field(default=None, kw_only=True)
+    subnet: str | None = field(default=None, kw_only=True)
+    network_id: str | None = field(default=None, kw_only=True)
+
     def __post_init__(self) -> None:
         if self.findings is None:
             self.findings = evaluate_devices(self.devices) if self.ok and self.findings_available else []
