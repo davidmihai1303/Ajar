@@ -26,13 +26,16 @@ EVIDENCE = ScanEvidence(
 BASE_RO = StaticText("Oricine din rețea se poate conecta la acest dispozitiv fără ca datele să fie criptate.",
                      ("Oprește serviciul Telnet.", "Folosește SSH dacă ai nevoie de acces de la distanță."))
 
+BASE_STREAM_EN = StaticText("Other devices on this network can reach this media stream.",
+                            ("Open the device's sharing settings.", "Turn off streaming if you do not use it."))
+
 
 def main() -> None:
     client = LLMClient.from_config()
     print(f"endpoint: {client.base_url or '(not set)'} | enabled: {client.enabled} | available: {client.available()}")
     for title, call in [
         ("personalize TELNET (ro)", lambda: personalize(client, TELNET, BASE_RO, "ro")),
-        ("personalize AirPlay-as-rtsp (en)", lambda: personalize(client, AIRPLAY, BASE_RO, "en")),
+        ("personalize AirPlay-as-rtsp (en)", lambda: personalize(client, AIRPLAY, BASE_STREAM_EN, "en")),
         ("ask: is port 7000 a camera? (en)", lambda: ask(client, "Is the thing on port 7000 a camera?", EVIDENCE, "en")),
         ("ask: what is my Wi-Fi password? (ro)", lambda: ask(client, "Care e parola de la Wi-Fi?", EVIDENCE, "ro")),
     ]:

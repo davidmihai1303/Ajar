@@ -21,7 +21,7 @@ with a secret answer key. Extra findings cost as much as missing ones. Correctne
 | `scanner/netcheck-nmap` | **root** via sudo | Self-contained: must **never** import from the repo. One argument (CIDR). Fixed nmap command. |
 | `backend/netcheck/analysis/` | Docker | Pure and deterministic. Must **not** import `history`, `api`, `explain`, network code or any LLM. No I/O except reading the XML file. |
 | `backend/netcheck/history/` | Docker | Local SQLite only. Compare scans **by IP, never by MAC**. |
-| `backend/netcheck/explain/` | Docker | Static YAML texts always work. `llm.py` is optional and only rephrases. |
+| `backend/netcheck/explain/` | Docker | Static YAML texts always work. `llm.py` is optional and selects verified evidence. |
 | `backend/netcheck/api/` | Docker | Never runs nmap; calls the host agent at `NETCHECK_AGENT_URL`. Binds to 127.0.0.1. |
 | `frontend/` | built into the backend image | Talks only to `/api/*`. |
 
@@ -80,14 +80,14 @@ gitleaks detect --source . --no-banner           # must be clean
 
 ## LLM rules (`explain/llm.py`)
 
-- Input: only findings of the current scan. Output: rephrasing or answers grounded in that evidence.
+- Input: only findings of the current scan. Output: statements rendered from verified evidence.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
 - Never produce or change findings, severities or scores.
 - Always fall back to `explain/static.py` on error or timeout.
-- Every output must pass `find_ungrounded()` and the sentence/step limits before it is shown. Never
-  bypass the check; if the model is rejected too often, change the prompt, not the check.
+- Accept only IDs from the records offered for that question. Python renders scan facts and the
+  supplied remediation steps. Check all explicit IPs against the scan before contacting the model.
 - Privacy: use a loopback model endpoint with proxies and redirects disabled. Never send MAC addresses to the model.
-- Banners, titles and hostnames go to the model only as cleaned JSON data, never inside instructions.
+- Exclude raw banners and page titles from prompts. Treat recorded device labels as untrusted data.
 - Tests: `docker compose run --rm app pytest -q tests/test_llm.py` (mock server, no real model needed).
 
 ## User-facing text
