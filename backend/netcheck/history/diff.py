@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from netcheck.analysis.models import Device, Finding, ScanResult
-from netcheck.analysis.privacy import mask_macs_in_text, mask_scan_filename
+from netcheck.analysis.privacy import mask_scan_filename
 
-from .records import ScanRecord, analysis_for
+from .records import ScanRecord, analysis_for, public_scan_id
 
 
 @dataclass
@@ -106,7 +106,7 @@ class ScanDiff:
 
 def _public_id(scan: ScanResult | ScanRecord) -> str:
     if isinstance(scan, ScanRecord) and scan.scan_id:
-        return mask_macs_in_text(scan.scan_id)
+        return public_scan_id(scan.scan_id)
     return mask_scan_filename(scan.file)
 
 

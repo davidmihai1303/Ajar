@@ -19,7 +19,7 @@ from netcheck.analysis.privacy import mask_mac, mask_macs_in_text, mask_scan_fil
 from netcheck.config import DB_PATH
 
 from .diff import ScanDiff, compute_diff
-from .records import ScanRecord, analysis_for
+from .records import ScanRecord, analysis_for, public_scan_id
 from .schema import ensure_schema
 
 
@@ -55,7 +55,7 @@ def save_scan(
     """Append a scan, or update the record identified by an explicit public ID."""
     record = scan if isinstance(scan, ScanRecord) else ScanRecord(scan)
     sid = scan_id or record.scan_id or uuid4().hex
-    if mask_macs_in_text(sid) != sid:
+    if public_scan_id(sid) != sid:
         raise ValueError("Scan ID must not contain a MAC address; omit it to generate an ID")
 
     fname = mask_scan_filename(record.file)

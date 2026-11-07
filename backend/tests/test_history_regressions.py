@@ -107,9 +107,27 @@ def test_concurrent_replacement_cannot_mix_header_and_findings(tmp_path, monkeyp
     assert (latest.scan, latest.findings, latest.score) == after
 
 
+@pytest.mark.parametrize("sid", ["550e8400-e29b-41d4-a716-446655440000", "550E8400-E29B-41D4-A716-446655440000"])
+def test_uuid4_can_be_retried_and_reused_from_a_diff(tmp_path, sid):
+    db = tmp_path / "history.sqlite"
+    before = analyze_file(FIXTURES / "V6a_before.xml")[0]
+    after = analyze_file(FIXTURES / "V6b_after.xml")[0]
+    save_scan(before, scan_id=sid, db_path=db)
+    save_scan(before, scan_id=sid, db_path=db)
+    last = save_scan(after, db_path=db)
+    diff = get_scan_diff_with_previous(last, db).to_dict()
+    assert diff["prev_scan_id"] == sid
+    assert get_scan(diff["prev_scan_id"], db).scan == before
+    assert len(list_scans(db)) == 2
+    for private_id in ("550e8400-e29b-11d4-a716-446655440000", sid + "_50-C7-BF-39-0C-8C"):
+        with pytest.raises(ValueError, match="Scan ID"):
+            save_scan(before, scan_id=private_id, db_path=db)
+
+
 def test_original_database_migrates_private_keys_and_keeps_known_evidence(tmp_path):
     db = tmp_path / "history.sqlite"
     private_id = "capture-D8-43-AE-2E-C3-6D"
+    public_id = "550e8400-e29b-41d4-a716-446655440000"
     with sqlite3.connect(db) as conn:
         conn.executescript("""
             CREATE TABLE scans(scan_id TEXT PRIMARY KEY, created_at TEXT, file_name TEXT, score INTEGER, error TEXT);
@@ -128,14 +146,16 @@ def test_original_database_migrates_private_keys_and_keeps_known_evidence(tmp_pa
                      (private_id,))
         conn.execute("INSERT INTO findings VALUES (1, ?, '192.0.2.5', 1900, 'UPNP_EXPOSED', 'medium', 10, '')",
                      (private_id,))
+        conn.execute("INSERT INTO scans VALUES (?, '2026-10-31T00:00:00+00:00', 'old.xml', 100, NULL)", (public_id,))
     store.init_db(db)
     store.init_db(db)
-    [summary] = list_scans(db)
+    summary, original = list_scans(db)
+    assert get_scan(public_id, db).scan_id == original["scan_id"] == public_id
     assert private_id not in str(summary)
     assert summary["file_name"] == "capture-D8:43:AE:xx:xx:xx.xml"
     record = get_scan(summary["scan_id"], db)
     assert record.score == 90 and record.scan.started is None
-    assert [entry["score"] for entry in get_score_trend(db)] == [90]
+    assert [entry["score"] for entry in get_score_trend(db)] == [100, 90]
     assert record.findings[0].protocol == "udp"
     assert record.devices[0].ports[0].port == 1900
     with sqlite3.connect(db) as conn:

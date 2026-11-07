@@ -4,10 +4,24 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Optional
+from uuid import UUID
 
 from netcheck.analysis.models import Device, Finding, ScanResult
+from netcheck.analysis.privacy import mask_macs_in_text
 from netcheck.analysis.rules import evaluate_devices
 from netcheck.analysis.scoring import compute_score
+
+
+def public_scan_id(scan_id: str) -> str:
+    """Mask embedded MACs, allowing an entire canonical random UUID as a public ID."""
+    try:
+        identifier = UUID(scan_id)
+    except ValueError:
+        pass
+    else:
+        if identifier.version == 4 and str(identifier) == scan_id.lower():
+            return scan_id
+    return mask_macs_in_text(scan_id)
 
 
 @dataclass

@@ -2,7 +2,9 @@
 import sqlite3
 from uuid import uuid4
 
-from netcheck.analysis.privacy import mask_macs_in_text, mask_scan_filename
+from netcheck.analysis.privacy import mask_scan_filename
+
+from .records import public_scan_id
 
 
 _CREATE = (
@@ -96,7 +98,7 @@ def _upgrade_original(conn: sqlite3.Connection) -> None:
     # Older callers could store a full MAC in the public ID. Rekey the complete record atomically.
     conn.execute("PRAGMA defer_foreign_keys = ON")
     for sid, filename in conn.execute("SELECT scan_id, file_name FROM scans").fetchall():
-        public_id = uuid4().hex if mask_macs_in_text(sid) != sid else sid
+        public_id = uuid4().hex if public_scan_id(sid) != sid else sid
         public_name = mask_scan_filename(filename) if filename else public_id
         if public_id == sid and public_name == filename:
             continue
