@@ -2,11 +2,25 @@
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Explanation, Finding } from "../api/proposedTypes";
+import type { Device, Explanation, Finding } from "../api/proposedTypes";
+import { href } from "../router";
 import { useApp } from "../state/AppState";
+import { DeviceIcon, IconAsk, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
-export default function FindingCard({ finding, deviceName }: { finding: Finding; deviceName: string }) {
+export default function FindingCard({
+  finding,
+  deviceName,
+  device,
+  showDevice = false,
+  onRescan,
+}: {
+  finding: Finding;
+  deviceName: string;
+  device?: Device;
+  showDevice?: boolean;
+  onRescan?: () => void;
+}) {
   const { t, lang, scan, aiConsent } = useApp();
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
@@ -59,8 +73,28 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
     }
   };
 
+  const askPrompt = t("finding.rephraseQuestion", {
+    code: finding.code,
+    device: deviceName,
+    ip: finding.ip,
+  });
+
   return (
     <article className={`card finding${finding.severity === "high" ? " finding-high" : ""}`}>
+      {showDevice && device && (
+        <div className="row spread" style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--line)" }}>
+          <div className="row">
+            <DeviceIcon type={device.device_type} size={18} />
+            <a href={href({ name: "device", ip: device.ip })} className="strong">
+              {device.hostname || device.ip}
+            </a>
+            {device.hostname && <span className="muted mono">({device.ip})</span>}
+          </div>
+          <a href={href({ name: "device", ip: device.ip })} className="muted" style={{ fontSize: 14 }}>
+            {t("dashboard.viewDevice")} →
+          </a>
+        </div>
+      )}
       <div className="row">
         <SeverityBadge severity={finding.severity} />
         <span className="muted">{t("finding.points", { points: finding.points })}</span>
@@ -75,9 +109,21 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
         </ol>
       )}
       <div className="finding-footer">
-        <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
-          {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
-        </button>
+        <div className="row wrap gap-m">
+          <a className="button" href={href({ name: "ask", query: askPrompt })} title={t("dashboard.askAi")}>
+            <IconAsk />
+            {t("dashboard.askAi")}
+          </a>
+          {onRescan && (
+            <button type="button" className="button" onClick={onRescan} title={t("dashboard.rescanNote")}>
+              <IconRefresh />
+              {t("dashboard.rescan")}
+            </button>
+          )}
+          <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
+            {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
+          </button>
+        </div>
         {rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
         {rephraseState === "noAnswer" && <span className="muted">{t("ask.cannotAnswer")}</span>}
         <details className="tech">

@@ -1,11 +1,13 @@
 // Layout + simple navigation between pages. First screen = Welcome until a scan exists,
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
+import DesktopDialog from "./components/DesktopDialog";
 import ErrorBanner from "./components/ErrorBanner";
+import MiniWidget from "./components/MiniWidget";
 import PermissionDialog from "./components/PermissionDialog";
 import Sidebar, { SidebarShowButton } from "./components/Sidebar";
 import Ask from "./pages/Ask";
@@ -21,6 +23,8 @@ function Shell() {
   const app = useApp();
   const { t, ready, scan, scanning, flow, acceptFlow, cancelFlow, demo, collapsed } = app;
   const route = useRoute();
+  const [showWidget, setShowWidget] = useState(false);
+  const [showDesktopDialog, setShowDesktopDialog] = useState(false);
 
   useEffect(() => {
     if (ready && scan && route.name === "home") navigate({ name: "dashboard" });
@@ -67,7 +71,11 @@ function Shell() {
     }
     content = (
       <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
-        <Sidebar current={route.name} />
+        <Sidebar
+          current={route.name}
+          onOpenWidget={() => setShowWidget((prev) => !prev)}
+          onOpenDesktopDialog={() => setShowDesktopDialog(true)}
+        />
         <SidebarShowButton />
         <main className="main" id="main">
           {page}
@@ -86,6 +94,18 @@ function Shell() {
       {content}
       <AjarDock />
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
+      {showWidget && (
+        <MiniWidget
+          onClose={() => setShowWidget(false)}
+          onDownloadWrapper={() => setShowDesktopDialog(true)}
+        />
+      )}
+      {showDesktopDialog && (
+        <DesktopDialog
+          onClose={() => setShowDesktopDialog(false)}
+          onOpenWidget={() => setShowWidget(true)}
+        />
+      )}
     </>
   );
 }

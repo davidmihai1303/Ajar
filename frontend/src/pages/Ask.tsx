@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { formatDate } from "../i18n";
+import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
 import ErrorBanner from "../components/ErrorBanner";
 import { IconSend } from "../components/Icons";
@@ -79,6 +80,23 @@ export default function Ask() {
       }
     }
   };
+
+  const route = useRoute();
+  const initialQueryHandled = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.name === "ask" && route.query && initialQueryHandled.current !== route.query) {
+      initialQueryHandled.current = route.query;
+      const initialText = route.query;
+      setQuestion(initialText);
+      if (aiConsent === true) {
+        void send(initialText, true);
+      } else {
+        setPending(initialText);
+        setAskConsent(true);
+      }
+    }
+  }, [route, aiConsent]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
