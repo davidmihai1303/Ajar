@@ -301,3 +301,90 @@ def delete_all_history(db_path: str = DB_PATH) -> None:
         conn_vacuum.execute("VACUUM")
     finally:
         conn_vacuum.close()
+
+
+def get_score_trend(db_path: str = DB_PATH) -> list[dict]:
+    """FR-10: Score trend over time, ordered chronologically (oldest to newest)."""
+    init_db(db_path)
+    with _get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT scan_id, created_at, file_name, score
+            FROM scans
+            WHERE score IS NOT NULL
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+        return [
+            {
+                "scan_id": r["scan_id"],
+                "created_at": r["created_at"],
+                "file_name": r["file_name"],
+                "score": r["score"],
+            }
+            for r in rows
+        ]
+
+
+def get_device_history(ip: str, db_path: str = DB_PATH) -> list[dict]:
+    """Get history of a specific device across scans by IP (FR-10)."""
+    init_db(db_path)
+    with _get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.scan_id, s.created_at, s.score, d.mac, d.vendor, d.hostname, d.device_type
+            FROM devices d
+            JOIN scans s ON d.scan_id = s.scan_id
+            WHERE d.ip = ?
+            ORDER BY s.created_at DESC
+            """,
+            (ip,),
+        ).fetchall()
+        return [
+            {
+                "scan_id": r["scan_id"],
+                "created_at": r["created_at"],
+                "network_score": r["score"],
+                "mac": r["mac"],
+                "vendor": r["vendor"],
+                "hostname": r["hostname"],
+                "device_type": r["device_type"],
+            }
+            for r in rows
+        ]
+
+
+def get_scan_diff_with_previous(scan_id: str, db_path: str = DB_PATH):
+    """Compute difference between scan_id and the chronologically preceding scan (FR-10, FR-13)."""
+    from netcheck.history.diff import compute_diff
+
+    init_db(db_path)
+    with _get_connection(db_path) as conn:
+        curr_row = conn.execute(
+            "SELECT scan_id, created_at FROM scans WHERE scan_id = ?",
+            (scan_id,),
+        ).fetchone()
+        if not curr_row:
+            return None
+
+        # Find the immediately preceding scan
+        prev_row = conn.execute(
+            """
+            SELECT scan_id FROM scans
+            WHERE created_at < ? AND scan_id != ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (curr_row["created_at"], scan_id),
+        ).fetchone()
+
+        if not prev_row:
+            return None
+
+    prev_scan = get_scan(prev_row["scan_id"], db_path)
+    curr_scan = get_scan(scan_id, db_path)
+    if not prev_scan or not curr_scan:
+        return None
+
+    return compute_diff(prev_scan, curr_scan)
+

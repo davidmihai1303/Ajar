@@ -26,6 +26,35 @@ class ScanDiff:
     new_findings: list[Finding] = field(default_factory=list)
     retained_findings: list[Finding] = field(default_factory=list)
 
+    @property
+    def alerts(self) -> list[dict]:
+        """FR-13: Flags a new device or newly opened port compared with the previous scan."""
+        alerts_list: list[dict] = []
+        for d in self.new_devices:
+            dev_desc = d.vendor or d.hostname or "unknown"
+            alerts_list.append({
+                "type": "NEW_DEVICE",
+                "severity": "warning",
+                "title": f"New device: {d.ip}",
+                "title_ro": f"Dispozitiv nou: {d.ip}",
+                "description": f"Device {d.ip} ({dev_desc}) connected to the network.",
+                "description_ro": f"Dispozitivul {d.ip} ({dev_desc}) s-a conectat la rețea.",
+                "ip": d.ip,
+                "port": None,
+            })
+        for p in self.newly_opened_ports:
+            alerts_list.append({
+                "type": "NEW_PORT",
+                "severity": "danger",
+                "title": f"New port opened: {p['ip']}:{p['port']}",
+                "title_ro": f"Port nou deschis: {p['ip']}:{p['port']}",
+                "description": f"Port {p['port']}/{p['protocol']} ({p.get('service') or 'unknown'}) was opened on {p['ip']}.",
+                "description_ro": f"Portul {p['port']}/{p['protocol']} ({p.get('service') or 'necunoscut'}) a fost deschis pe {p['ip']}.",
+                "ip": p["ip"],
+                "port": p["port"],
+            })
+        return alerts_list
+
     def to_dict(self) -> dict:
         return {
             "prev_scan_id": self.prev_scan_id,
@@ -55,6 +84,7 @@ class ScanDiff:
                 {"ip": f.ip, "port": f.port, "code": f.code, "severity": f.severity, "points": f.points}
                 for f in self.retained_findings
             ],
+            "alerts": self.alerts,
         }
 
 
