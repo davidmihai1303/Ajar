@@ -117,7 +117,6 @@ the jury uses for the Validation and Test Sets.
 ```
 Smarthack/
 ├── README.md                  this file
-├── SmartHack_Setup.md         existing distributed LLM setup (llama-server on the MSI)
 ├── docker-compose.yml         the app container (backend + built frontend)
 ├── .env.example               configuration names only, no values
 ├── .gitignore                 .env, .api_key, data/, input/ are never committed
@@ -381,7 +380,6 @@ Details: [`lab/README.md`](lab/README.md).
 | 8001 | this app (API + UI) | scanner laptop | 127.0.0.1 |
 | 8765 | scanner agent | scanner laptop | 127.0.0.1 |
 | 8080 | llama-server (optional LLM) | MSI | 127.0.0.1 |
-| 8000 | existing SmartHack chat API | MSI | 0.0.0.0 (see `SmartHack_Setup.md`) |
 
 ---
 

@@ -9,7 +9,6 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | `docker-compose.yml` | App container: host network, non-root, volumes for scans (read-only), history and input |
 | `.env.example` | Names of the configuration variables, no values |
 | `.gitignore` | Keeps `.env`, `.api_key`, `data/`, `input/`, build output out of git |
-| `SmartHack_Setup.md` | Existing distributed llama-server setup (optional LLM backend) |
 
 ## `scanner/`: host, the only part that touches the network
 
