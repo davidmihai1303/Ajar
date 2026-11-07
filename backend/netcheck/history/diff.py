@@ -157,6 +157,9 @@ def compute_diff(
     def finding_key(f: Finding) -> tuple[str, Optional[int], str]:
         return (f.ip, f.port, f.code)
 
+    # Without both ledgers we cannot claim a finding appeared or disappeared.
+    if findings_prev is None or findings_curr is None:
+        findings_prev = findings_curr = ()
     prev_findings_map = {finding_key(f): f for f in findings_prev}
     curr_findings_map = {finding_key(f): f for f in findings_curr}
 
@@ -175,7 +178,7 @@ def compute_diff(
         curr_scan_id=_public_id(curr),
         score_before=score_before,
         score_after=score_after,
-        score_change=score_after - score_before,
+        score_change=score_after - score_before if score_after is not None and score_before is not None else None,
         new_devices=new_devices,
         removed_devices=removed_devices,
         newly_opened_ports=newly_opened_ports,

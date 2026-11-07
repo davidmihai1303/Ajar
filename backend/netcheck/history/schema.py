@@ -3,8 +3,11 @@ import sqlite3
 from uuid import uuid4
 
 from netcheck.analysis.privacy import mask_scan_filename
+from netcheck.analysis.rules import evaluate_devices
+from netcheck.analysis.scoring import compute_score
 
 from .records import public_scan_id, scan_start_time, utc_timestamp
+from .rows import read_scan, write_findings
 
 
 _CREATE = (
@@ -85,16 +88,6 @@ def _upgrade_original(conn: sqlite3.Connection) -> None:
             ), '')
         END
     """)
-    # A missing legacy score can be recovered from a saved findings ledger. When neither
-    # was supplied, the old format cannot distinguish an unanalyzed scan from a clean one.
-    conn.execute("""
-        UPDATE scans SET score = (
-            SELECT MAX(0, 100 - SUM(f.points)) FROM findings f WHERE f.scan_id = scans.scan_id
-        ) WHERE score IS NULL AND error IS NULL AND EXISTS (
-            SELECT 1 FROM findings f WHERE f.scan_id = scans.scan_id
-        )
-    """)
-
     # Older callers could store a full MAC in the public ID. Rekey the complete record atomically.
     conn.execute("PRAGMA defer_foreign_keys = ON")
     for sid, filename in conn.execute("SELECT scan_id, file_name FROM scans").fetchall():
@@ -120,14 +113,35 @@ def _normalize_timestamps(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE scans SET created_at = ? WHERE scan_id = ?", (value, sid))
 
 
+def _recover_missing_analysis(conn: sqlite3.Connection) -> None:
+    conn.execute("ALTER TABLE scans ADD COLUMN findings_available INTEGER NOT NULL DEFAULT 1")
+    missing = conn.execute("SELECT scan_id FROM scans WHERE error IS NULL AND score IS NULL").fetchall()
+    for (sid,) in missing:
+        record = read_scan(conn, sid)
+        assert record is not None  # Selected in the same migration transaction.
+        findings = record.findings
+        if not findings:
+            # The original writer kept all the port, title and device fields used by the catalog.
+            # A header alone (or an unusable device address) cannot establish a clean scan.
+            try:
+                findings = evaluate_devices(record.devices) if record.devices else None
+            except ValueError:
+                findings = None
+            if findings is None:
+                conn.execute("UPDATE scans SET findings_available = 0 WHERE scan_id = ?", (sid,))
+                continue
+            write_findings(conn, sid, findings)
+        conn.execute("UPDATE scans SET score = ? WHERE scan_id = ?", (compute_score(findings), sid))
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    if conn.execute("PRAGMA user_version").fetchone()[0] == 2:
+    if conn.execute("PRAGMA user_version").fetchone()[0] == 3:
         return
     conn.execute("BEGIN IMMEDIATE")
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version == 2:  # Another initializer finished while we were waiting.
+    if version == 3:  # Another initializer finished while we were waiting.
         return
-    if version not in (0, 1):
+    if version not in (0, 1, 2):
         raise ValueError(f"Unsupported history database version {version}")
     if version == 0:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scans'").fetchone():
@@ -135,5 +149,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         else:
             for statement in _CREATE:
                 conn.execute(statement)
-    _normalize_timestamps(conn)
-    conn.execute("PRAGMA user_version = 2")
+    if version < 2:
+        _normalize_timestamps(conn)
+    _recover_missing_analysis(conn)
+    conn.execute("PRAGMA user_version = 3")

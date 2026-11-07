@@ -47,10 +47,16 @@ class ScanRecord:
     """Wrapper around ScanResult retrieved from the SQLite history database."""
 
     scan: ScanResult
-    findings: list[Finding] = field(default_factory=list)
+    findings: list[Finding] | None = None  # None requests analysis; [] is an explicitly clean ledger.
     score: Optional[int] = None
     created_at: str = ""
     scan_id: str = ""
+    # False when the old database stored neither a ledger nor enough evidence to reconstruct it.
+    findings_available: bool = field(default=True, kw_only=True)
+
+    def __post_init__(self) -> None:
+        if self.findings is None:
+            self.findings = evaluate_devices(self.devices) if self.ok and self.findings_available else []
 
     @property
     def file(self) -> str:
@@ -78,13 +84,16 @@ class ScanRecord:
 
 
 def analysis_for(scan: ScanResult | ScanRecord, findings: Sequence[Finding] | None,
-                 score: int | None) -> tuple[Sequence[Finding], int]:
+                 score: int | None) -> tuple[Sequence[Finding] | None, int | None]:
     """Resolve findings and score for a successful scan, preserving explicit overrides."""
     if findings is None:
         if isinstance(scan, ScanRecord):
-            findings = scan.findings
             if score is None:
                 score = scan.score
+            if not scan.findings_available:
+                return None, score
+            findings = scan.findings
         else:
             findings = evaluate_devices(scan.devices)
+    assert findings is not None
     return findings, compute_score(findings) if score is None else score

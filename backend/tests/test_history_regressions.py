@@ -49,6 +49,51 @@ def test_effective_findings_and_scores_for_raw_and_loaded_scans(tmp_path):
     assert (diff.score_before, diff.score_after, diff.score_change) == (60, 100, 40)
 
 
+def test_wrapped_scan_derives_analysis_but_preserves_explicit_empty_findings(tmp_path):
+    db = tmp_path / "history.sqlite"
+    before, findings, _ = analyze_file(FIXTURES / "V6a_before.xml")
+    after = analyze_file(FIXTURES / "V6b_after.xml")[0]
+    wrapped = ScanRecord(before)
+    assert wrapped.findings == findings
+    record = get_scan(save_scan(wrapped, db_path=db), db)
+    assert (record.findings, record.score) == (findings, 60)
+    assert compute_diff(wrapped, ScanRecord(after)).score_change == 40
+    for clean in (ScanRecord(before, findings=[]), ScanRecord(before, findings=[], score=81)):
+        saved = get_scan(save_scan(clean, db_path=db), db)
+        assert (saved.findings, saved.score) == ([], clean.score if clean.score is not None else 100)
+    assert compute_diff(wrapped, wrapped, curr_findings=[]).score_change == 40
+
+
+def test_legacy_analysis_is_recovered_only_where_evidence_exists(tmp_path):
+    db = tmp_path / "history.sqlite"
+    before, findings, _ = analyze_file(FIXTURES / "V6a_before.xml")
+    after = analyze_file(FIXTURES / "V6b_after.xml")[0]
+    for sid, scan in (("before", before), ("after", after), ("unknown", replace(after, devices=()))):
+        save_scan(scan, scan_id=sid, db_path=db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE scans DROP COLUMN findings_available")
+        conn.execute("UPDATE scans SET score = NULL")
+        conn.execute("DELETE FROM findings")
+        conn.execute("PRAGMA user_version = 1")
+    assert [row["score"] for row in get_score_trend(db)] == [60, 100]
+    diff = get_scan_diff_with_previous("after", db)
+    assert diff.resolved_findings == findings and diff.score_change == 40
+    unknown = get_scan("unknown", db)
+    assert unknown.score is None and not unknown.findings_available
+    save_scan(unknown, db_path=db)
+    for old, new in ((before, get_scan("unknown", db)), (get_scan("unknown", db), before)):
+        diff = compute_diff(old, new)
+        assert diff.score_change is None and {diff.score_before, diff.score_after} == {None, 60}
+        assert not diff.new_findings and not diff.resolved_findings and not diff.retained_findings
+    save_scan(unknown, score=85, db_path=db)
+    scored = get_scan("unknown", db)
+    assert scored.score == 85 and not scored.findings_available
+    assert compute_diff(scored, before).score_change == -25
+    save_scan(scored, findings=[], db_path=db)
+    clean = get_scan("unknown", db)
+    assert clean.findings_available and clean.score == 100
+
+
 def test_round_trip_preserves_all_scan_and_finding_fields(tmp_path):
     db = tmp_path / "history.sqlite"
     for path in sorted(FIXTURES.glob("*.xml")):
@@ -76,6 +121,7 @@ def test_history_orders_equivalent_and_mixed_offsets_by_instant(tmp_path, upgrad
         save_scan(ScanRecord(scan, findings, score, created_at=stamp), scan_id=sid, db_path=db)
     if upgrade:
         with sqlite3.connect(db) as conn:
+            conn.execute("ALTER TABLE scans DROP COLUMN findings_available")
             conn.executemany("UPDATE scans SET created_at = ? WHERE scan_id = ?",
                              [(stamp, sid) for sid, stamp in stamps.items()])
             conn.execute("PRAGMA user_version = 1")
@@ -96,10 +142,13 @@ def test_invalid_legacy_dates_do_not_block_other_history(tmp_path):
     for sid in ("dated", "undated"):
         save_scan(scan, scan_id=sid, db_path=db)
     with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE scans DROP COLUMN findings_available")
         conn.execute("UPDATE scans SET created_at = 'invalid'")
         conn.execute("UPDATE scans SET started = NULL WHERE scan_id = 'undated'")
         conn.execute("PRAGMA user_version = 1")
     assert get_scan("dated", db).created_at == datetime.fromtimestamp(scan.started, timezone.utc).isoformat()
+    assert get_scan("undated", db).created_at == ""
+    save_scan(get_scan("undated", db), db_path=db)
     assert get_scan("undated", db).created_at == ""
     assert get_scan_diff_with_previous("dated", db) is None
     assert get_scan_diff_with_previous("undated", db) is None
