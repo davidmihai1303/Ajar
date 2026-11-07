@@ -100,8 +100,8 @@ the jury uses for the Validation and Test Sets.
    and services, so a rule can be corrected by changing one line.
 6. **Texts live in YAML.** `explain/texts/ro.yaml` and `en.yaml` can be written and reviewed without
    touching code.
-7. **The LLM never decides anything.** It only rephrases and answers questions from the scan's
-   evidence. If it is unavailable, the built-in texts are used.
+7. **The scan determines the facts.** The model selects evidence for the answer. Python renders
+   those records and provides the built-in fallback when the model is unavailable.
 
 ### Two ways in
 
@@ -193,6 +193,7 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_BASE_URL` | empty | OpenAI-compatible endpoint, e.g. `http://127.0.0.1:8080/v1`. Empty = built-in texts only |
 | `LLM_API_KEY` | empty | only if the endpoint needs one; never committed |
 | `LLM_MODEL` | empty | model name sent to the endpoint |
+| `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
 
@@ -276,14 +277,16 @@ byte-for-byte reproducible.
 - **Built-in texts** (`backend/netcheck/explain/texts/*.yaml`): one explanation of at most two sentences
   and 1–5 fix steps per code, in Romanian and English, at roughly a 12-year-old reading level.
   Context variants exist where the code alone would mislead. For example, `rtsp` on a Mac is AirPlay, not a camera.
-- **Optional LLM**: the existing **llama-server** on the MSI (`127.0.0.1:8080`, OpenAI-compatible,
-  see `SmartHack_Setup.md`). It receives **only** the findings of the current scan and may:
-  - rephrase an explanation for the specific device,
-  - answer a question such as "is it safe that my printer has port 9100 open?",
-  - say so when the scan cannot answer the question.
-
-  It never invents ports, CVEs or phone numbers, and never changes findings or scores (NFR-06).
-  If it is off or slow, the built-in texts are shown.
+- The optional llama-server on the MSI selects relevant scan records. Python renders each selected
+  device, endpoint, finding and score in the requested language. Device-specific explanations use a
+  verified label with the original explanation and ordered fixes.
+- An IP outside the current scan gets a local reply before the model is called. For in-scope
+  questions, the model can select only IDs offered for that question. Unrecognised IDs, malformed
+  replies and free-form claims fall back to built-in text. A question can still be ambiguous, so
+  each returned statement identifies its device or endpoint. Simple score questions read the scan score directly.
+- Model requests go directly to a numeric loopback address. The client normalises `localhost`
+  to `127.0.0.1` and disables environment proxies and redirects.
+- **Try it against the real model:** `docker compose run --rm app python -m netcheck.explain.smoke`
 
 ---
 
@@ -328,6 +331,7 @@ python3 -m unittest discover -s scanner/tests      # scanner (stdlib only, never
 | `test_history.py` | V6a → V6b shows 3 resolved findings although MACs changed |
 | `test_lab.py` | Our lab: before → 0, after → 75 |
 | `test_determinism.py` | Same file three times → identical output |
+| `test_llm.py` | Grounding check, fallbacks, prompt injection, privacy, determinism of the LLM layer |
 | `scanner/tests/test_scanner.py` | Guard refusals (public IP, venue subnet, no `--confirm`), two networks refused, root wrapper rule, agent rejects browser / wrong-Host requests |
 
 ---
@@ -399,4 +403,4 @@ Details: [`lab/README.md`](lab/README.md).
 | Explanations RO/EN | scaffold |
 | History + diff | scaffold |
 | API + frontend | scaffold |
-| Optional LLM | scaffold |
+| Optional LLM (grounded personalisation + Q&A) | done, API wiring pending |
