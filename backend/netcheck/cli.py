@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     scan, findings, score = analyze_file(args.file, max_bytes=config.MAX_XML_BYTES)
-    label = single_file_label(args.file, scan.file)
+    label = single_file_label(args.file, scan.file, max_bytes=config.MAX_XML_BYTES)
     if not scan.ok:
         print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), label,
               file=sys.stderr)

@@ -29,7 +29,7 @@ from .catalog import HTTP_ADMIN_TITLE
 from .device_type import guess_device_type
 from .models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                      Device, Port, ScanResult)
-from .privacy import mask_mac, mask_macs_in_text
+from .privacy import mask_mac, mask_macs_in_text, mask_scan_filename
 
 DEFAULT_MAX_XML_BYTES = 20 * 1024 * 1024
 MAX_TEXT_CHARS = 512
@@ -67,23 +67,25 @@ def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
         with open(path, "rb") as fh:
             data = fh.read(max(0, max_bytes + 1))
     except OSError:
-        return ScanResult(file=mask_macs_in_text(name), error=ERROR_UNREADABLE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNREADABLE)
     return parse_bytes(data, name, max_bytes)
 
 
 def parse_bytes(data: bytes, file: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
     """Parse a report already in memory using the same size limit as the file reader."""
-    file = mask_macs_in_text(os.path.basename(file))
+    name = os.path.basename(file)
     if len(data) > max_bytes:
-        return ScanResult(file=file, error=ERROR_TOO_LARGE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_TOO_LARGE)
     try:
         root = SafeET.fromstring(data)
     except DefusedXmlException:
-        return ScanResult(file=file, error=ERROR_UNSAFE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNSAFE)
     except (ParseError, ValueError, LookupError):
-        return ScanResult(file=file, error=ERROR_UNREADABLE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNREADABLE)
     if root.tag != "nmaprun":
-        return ScanResult(file=file, error=ERROR_NOT_NMAP)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_NOT_NMAP)
+    addresses = root.iterfind("host/address[@addrtype='mac']")
+    file = mask_scan_filename(name, (address.get("addr", "") for address in addresses))
     if root.find("runstats/finished[@exit='error']") is not None:
         return ScanResult(file=file, error=ERROR_UNREADABLE)
 
