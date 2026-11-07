@@ -1,10 +1,10 @@
-// Before → after between two scans (compared by IP): resolved and new findings, devices, ports.
+// Before → after between two scans (compared by IP). Shows only what actually changed.
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff } from "../api/proposedTypes";
 import { useApp } from "../state/AppState";
 
-export default function DiffList({ diff }: { diff: ScanDiff }) {
+export default function DiffList({ diff, showScore = true }: { diff: ScanDiff; showScore?: boolean }) {
   const { t, lang } = useApp();
   const [titles, setTitles] = useState<Record<string, string>>({});
 
@@ -24,60 +24,58 @@ export default function DiffList({ diff }: { diff: ScanDiff }) {
 
   const before = diff.score_before ?? "—";
   const after = diff.score_after ?? "—";
-  const better = (diff.score_after ?? 0) > (diff.score_before ?? 0);
+  const nothing =
+    diff.findings_resolved.length + diff.findings_new.length + diff.devices_added.length + diff.devices_removed.length + diff.ports_opened.length + diff.ports_closed.length === 0;
 
   return (
     <div className="card diff">
-      <div className="row baseline">
+      {showScore && (
         <span className="serif diff-score">
           {before} → {after}
         </span>
-        <span className="muted">{better ? t("history.better") : t("history.notBetter")}</span>
-      </div>
-      <div className="row diff-counts">
-        <span>{t("history.resolved", { count: diff.findings_resolved.length })}</span>
-        <span>{t("history.new", { count: diff.findings_new.length })}</span>
-        <span>{t("history.portsClosed", { count: diff.ports_closed.length })}</span>
-        <span>{t("history.portsOpened", { count: diff.ports_opened.length })}</span>
-        <span>{t("history.devicesAdded", { count: diff.devices_added.length })}</span>
-        <span>{t("history.devicesRemoved", { count: diff.devices_removed.length })}</span>
-      </div>
-      <ul className="diff-list">
-        {diff.findings_resolved.map((item) => (
-          <li key={`r-${item.ip}-${item.port}-${item.code}`}>
-            <span className="diff-mark" aria-hidden="true">✓</span>
-            <span className="grow">
-              {titles[item.code] ?? item.code} ({item.ip})
-            </span>
-            <span className="muted">{t("history.tagResolved")}</span>
-          </li>
-        ))}
-        {diff.findings_new.map((item) => (
-          <li key={`n-${item.ip}-${item.port}-${item.code}`}>
-            <span className="diff-mark" aria-hidden="true">!</span>
-            <span className="grow">
-              {titles[item.code] ?? item.code} ({item.ip})
-            </span>
-            <span className="muted">{t("history.tagNew")}</span>
-          </li>
-        ))}
-        {diff.devices_added.map((ip) => (
-          <li key={`d-${ip}`}>
-            <span className="diff-mark" aria-hidden="true">+</span>
-            <span className="grow">{ip}</span>
-            <span className="muted">{t("history.tagDevice")}</span>
-          </li>
-        ))}
-        {diff.ports_opened.map((port) => (
-          <li key={`p-${port.ip}-${port.protocol}-${port.port}`}>
-            <span className="diff-mark" aria-hidden="true">+</span>
-            <span className="grow">
-              {port.protocol.toUpperCase()} {port.port} {port.service ?? ""} ({port.ip})
-            </span>
-            <span className="muted">{t("history.tagPort")}</span>
-          </li>
-        ))}
-      </ul>
+      )}
+      {nothing ? (
+        <p className="muted">{t("history.noChanges")}</p>
+      ) : (
+        <ul className="diff-list">
+          {diff.findings_resolved.map((item) => (
+            <li key={`r-${item.ip}-${item.port}-${item.code}`}>
+              <span className="diff-mark good" aria-hidden="true">✓</span>
+              <span className="grow">{t("history.itemFixed", { what: titles[item.code] ?? item.code, ip: item.ip })}</span>
+            </li>
+          ))}
+          {diff.findings_new.map((item) => (
+            <li key={`n-${item.ip}-${item.port}-${item.code}`}>
+              <span className="diff-mark bad" aria-hidden="true">!</span>
+              <span className="grow">{t("history.itemNew", { what: titles[item.code] ?? item.code, ip: item.ip })}</span>
+            </li>
+          ))}
+          {diff.devices_added.map((ip) => (
+            <li key={`d-${ip}`}>
+              <span className="diff-mark bad" aria-hidden="true">+</span>
+              <span className="grow">{t("history.itemDevice", { ip })}</span>
+            </li>
+          ))}
+          {diff.devices_removed.map((ip) => (
+            <li key={`g-${ip}`}>
+              <span className="diff-mark" aria-hidden="true">−</span>
+              <span className="grow">{t("history.itemGone", { ip })}</span>
+            </li>
+          ))}
+          {diff.ports_closed.length > 0 && (
+            <li>
+              <span className="diff-mark good" aria-hidden="true">✓</span>
+              <span className="grow">{t("history.itemPortsClosed", { count: diff.ports_closed.length })}</span>
+            </li>
+          )}
+          {diff.ports_opened.length > 0 && (
+            <li>
+              <span className="diff-mark bad" aria-hidden="true">!</span>
+              <span className="grow">{t("history.itemPortsOpened", { count: diff.ports_opened.length })}</span>
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }

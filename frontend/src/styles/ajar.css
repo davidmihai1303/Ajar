@@ -28,6 +28,9 @@
 .ajar .pupil { transition: transform 0.12s ease-out; }
 .ajar .pupil-dot { transform-box: fill-box; transform-origin: center; transition: transform 0.3s; }
 .ajar[data-state="ajar"] .pupil-dot { transform: translate(2px, -2px); }
+.ajar[data-state="unknown"] .pupil-dot { transform: translate(1.5px, -2.5px); }
+.ajar .question { transform-box: fill-box; transform-origin: 50% 90%; animation: ajar-wonder 2.4s ease-in-out infinite; }
+@keyframes ajar-wonder { 50% { transform: translateY(-4px) rotate(10deg); } }
 .ajar[data-state="wide"] .pupil-dot { transform: scale(0.42); }
 
 .ajar .wobble { transform-box: fill-box; transform-origin: center; animation: ajar-wobble 0.45s ease-in-out infinite alternate; }
@@ -38,6 +41,7 @@
 @keyframes ajar-drip { 0% { transform: translateY(-3px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(16px); opacity: 0; } }
 
 .ajar .st { display: none; }
+.ajar[data-state="unknown"] .s-unknown,
 .ajar[data-state="shut"] .s-shut,
 .ajar[data-state="ajar"] .s-ajar,
 .ajar[data-state="wide"] .s-wide,

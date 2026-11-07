@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import "../styles/ajar.css";
 
-export type AjarState = "shut" | "ajar" | "wide" | "locked";
+export type AjarState = "unknown" | "shut" | "ajar" | "wide" | "locked";
 
 const STROKE = "#2B1B10";
 
@@ -47,22 +47,18 @@ export default function AjarMascot({ state, label }: { state: AjarState; label: 
       if (!svg || !matrix) return;
       const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
       svg.querySelectorAll<SVGGElement>(".pupil").forEach((pupil) => {
-        if (state === "wide") {
-          pupil.style.transform = "";
-          return;
-        }
         const cx = Number(pupil.dataset.cx);
         const cy = Number(pupil.dataset.cy);
         const dx = point.x - cx;
         const dy = point.y - cy;
         const distance = Math.hypot(dx, dy) || 1;
-        const reach = Math.min(3.5, distance / 20);
+        const reach = Math.min(4.5, distance / 16);
         pupil.style.transform = `translate(${(dx / distance) * reach}px, ${(dy / distance) * reach}px)`;
       });
     };
     document.addEventListener("pointermove", onMove);
     return () => document.removeEventListener("pointermove", onMove);
-  }, [state]);
+  }, []);
 
   return (
     <div className={`ajar${reacting ? " reacting" : ""}`} data-state={state}>
@@ -87,7 +83,7 @@ export default function AjarMascot({ state, label }: { state: AjarState; label: 
                   <ellipse cx="116" cy="102" rx="8" ry="4.5" fill="#F29BB0" />
                   <ellipse cx="184" cy="102" rx="8" ry="4.5" fill="#F29BB0" />
                 </g>
-                <g className="st s-shut s-ajar s-wide">
+                <g className="st s-unknown s-shut s-ajar s-wide">
                   <g className="eye">
                     <g className="eye-size">
                       <circle cx="130" cy="84" r="11" fill="#FFFFFF" />
@@ -118,7 +114,12 @@ export default function AjarMascot({ state, label }: { state: AjarState; label: 
                     <path d="M114 62 L140 51" />
                     <path d="M160 51 L186 62" />
                   </g>
+                  <g className="st s-unknown">
+                    <path d="M116 67 Q127 57 139 63" />
+                    <path d="M161 69 L183 68" />
+                  </g>
                 </g>
+                <path className="st s-unknown" d="M142 108 Q150 111 158 106" fill="none" stroke={STROKE} strokeWidth="3" strokeLinecap="round" />
                 <path className="st s-shut" d="M138 106 Q150 115 162 106" fill="none" stroke={STROKE} strokeWidth="3" strokeLinecap="round" />
                 <path className="st s-ajar wobble" d="M137 111 Q143.5 105 150 111 Q156.5 117 163 111" fill="none" stroke={STROKE} strokeWidth="3" strokeLinecap="round" />
                 <g className="st s-wide">
@@ -142,6 +143,7 @@ export default function AjarMascot({ state, label }: { state: AjarState; label: 
           <circle cx="188.5" cy="137" r="2.4" fill="#5A3A22" />
           <rect x="187.4" y="137" width="2.2" height="6" fill="#5A3A22" />
         </g>
+        <text className="st s-unknown question" x="216" y="62" fontSize="34" fontWeight="700" fill="#C9971F" fontFamily="Georgia, serif">?</text>
         <g className="st s-locked" stroke="#E0B23A" strokeWidth="3" strokeLinecap="round">
           <path className="sparkle" d="M232 44 v14 M225 51 h14" />
           <path className="sparkle b" d="M58 62 v10 M53 67 h10" />

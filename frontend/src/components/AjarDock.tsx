@@ -38,7 +38,7 @@ export default function AjarDock() {
               <span className="serif ajar-score-number">{score}</span>
               <span className="muted"> / 100</span>
             </span>
-            <span className="ajar-score-label">{t(`score.level.${level}`)}</span>
+            <span className={`ajar-score-label text-${level}`}>{t(`score.level.${level}`)}</span>
           </>
         )}
       </div>

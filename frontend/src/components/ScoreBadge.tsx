@@ -18,7 +18,7 @@ export default function ScoreBadge({ score, size = "large" }: { score: number | 
   }
   return (
     <div className="score-large">
-      <span className="serif score-number">{score ?? "—"}</span>
+      <span className={`serif score-number text-${level}`}>{score ?? "—"}</span>
       <div className="score-meta">
         <span className={`chip level-${level}`}>
           <span aria-hidden="true">{LEVEL_ICON[level]}</span>

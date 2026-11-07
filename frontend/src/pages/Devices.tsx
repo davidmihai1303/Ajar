@@ -1,15 +1,14 @@
 // Everything on the network, riskiest first. Technical details open per row.
 import { useState } from "react";
-import { byDanger, byIp, deviceRisks, SEVERITY_RANK, type DeviceRisk } from "../lib/scan";
+import { byDanger, byIp, deviceRisks, type DeviceRisk } from "../lib/scan";
 import { useApp } from "../state/AppState";
 import DeviceCard from "../components/DeviceCard";
 
-type Sort = "danger" | "ip" | "severity";
+type Sort = "danger" | "ip";
 
 const sorters: Record<Sort, (a: DeviceRisk, b: DeviceRisk) => number> = {
   danger: byDanger,
   ip: (a, b) => byIp(a.device, b.device),
-  severity: (a, b) => (b.worst ? SEVERITY_RANK[b.worst] : -1) - (a.worst ? SEVERITY_RANK[a.worst] : -1) || byDanger(a, b),
 };
 
 export default function Devices() {
@@ -26,7 +25,7 @@ export default function Devices() {
           <p className="muted">{t("devices.count", { count: scan.devices.length })}</p>
         </div>
         <div className="segmented" role="group" aria-label={t("devices.sort")}>
-          {(["danger", "ip", "severity"] as const).map((key) => (
+          {(["danger", "ip"] as const).map((key) => (
             <button key={key} type="button" className={sort === key ? "on" : ""} aria-pressed={sort === key} onClick={() => setSort(key)}>
               {t(`devices.sort.${key}`)}
             </button>

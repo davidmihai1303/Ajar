@@ -80,7 +80,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const saved = store.get("ajar.ai");
     return saved === null ? null : saved === "yes";
   });
-  const [collapsed, setCollapsedState] = useState(() => store.get("ajar.sidebar") === "hidden");
+  const [collapsed, setCollapsedState] = useState(() => {
+    const saved = store.get("ajar.sidebar");
+    if (saved) return saved === "hidden";
+    // On narrow windows the sidebar would cover the page, so it starts hidden there.
+    return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches;
+  });
   const [dialogs, setDialogs] = useState(0);
   const [bubble, setBubble] = useState<string | null>(null);
   const t = useMemo(() => makeT(lang), [lang]);

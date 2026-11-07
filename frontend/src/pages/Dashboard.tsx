@@ -1,4 +1,5 @@
 // "How safe am I and what do I do first?", answered without a click (jury check #2).
+// Kept short on purpose: score, one compact "fix this first" card, counts, and changes folded away.
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff } from "../api/proposedTypes";
@@ -7,14 +8,23 @@ import { fixFirst, severityCounts } from "../lib/scan";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
-import { DeviceIcon, IconBell } from "../components/Icons";
+import { DeviceIcon, IconBell, IconChevron } from "../components/Icons";
 import ScoreBadge, { SeverityBadge } from "../components/ScoreBadge";
+
+const readOpen = () => {
+  try {
+    return window.localStorage.getItem("ajar.alerts") === "open";
+  } catch {
+    return false;
+  }
+};
 
 export default function Dashboard() {
   const { t, lang, scan, history, setBubble } = useApp();
   const deviceName = useDeviceName();
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
+  const [alertsOpen, setAlertsOpen] = useState(readOpen);
   const first = scan ? fixFirst(scan) : null;
   const finding = first?.findings[0] ?? null;
   const index = scan ? history.findIndex((item) => item.id === scan.id) : -1;
@@ -49,9 +59,20 @@ export default function Dashboard() {
     };
   }, [scan?.id, lang]);
 
+  const toggleAlerts = () => {
+    const next = !alertsOpen;
+    setAlertsOpen(next);
+    try {
+      window.localStorage.setItem("ajar.alerts", next ? "open" : "closed");
+    } catch {
+      /* remembered for this visit only */
+    }
+  };
+
   if (!scan) return null;
   const counts = severityCounts(scan);
   const delta = previous && scan.score !== null && previous.score !== null ? scan.score - previous.score : null;
+  const changes = diff ? diff.devices_added.length + diff.ports_opened.length : 0;
 
   return (
     <div className="page">
@@ -67,66 +88,74 @@ export default function Dashboard() {
           </span>
         </div>
         {delta !== null && (
-          <a href={href({ name: "history" })}>{delta === 0 ? t("dashboard.same") : t(delta > 0 ? "dashboard.up" : "dashboard.down", { delta: Math.abs(delta) })}</a>
+          <a href={href({ name: "history" })} className={delta < 0 ? "text-risky" : delta > 0 ? "text-safe" : ""}>
+            {delta === 0 ? t("dashboard.same") : t(delta > 0 ? "dashboard.up" : "dashboard.down", { delta: Math.abs(delta) })}
+          </a>
         )}
       </section>
 
       {scan.error && <p className="banner banner-error">{t("scan.unreadable")}</p>}
 
       {first && finding ? (
-        <section className="fix-first">
-          <span className="muted strong">{t("dashboard.fixFirst")}</span>
-          <div className="row nowrap">
+        <section className={`fix-first tint-${finding.severity}`} aria-labelledby="fix-first-title">
+          <div className="fix-first-head">
             <DeviceIcon type={first.device.device_type} />
             <div className="grow">
-              <h2 className="h2">{deviceName(first.device.device_type)}</h2>
-              <p className="muted">
-                {first.device.vendor ?? first.device.hostname ?? first.device.ip}, {t("finding.points", { points: first.points })}
-              </p>
+              <h2 id="fix-first-title" className="h3">
+                {t("dashboard.startWith", { device: deviceName(first.device.device_type) })}
+              </h2>
+              <p className="muted">{text?.explanation ?? ""}</p>
             </div>
             <SeverityBadge severity={finding.severity} />
           </div>
-          <p>{text?.explanation ?? ""}</p>
-          {text && text.steps[0] && (
-            <div className="first-step">
-              <span className="step-number" aria-hidden="true">
-                1
-              </span>
-              <span className="strong">{text.steps[0]}</span>
-            </div>
-          )}
-          <a className="button primary" href={href({ name: "device", ip: first.device.ip })}>
-            {t("dashboard.showMe")}
-          </a>
+          <div className="fix-first-action">
+            {text && text.steps[0] && (
+              <p className="grow">
+                <span className="step-number" aria-hidden="true">
+                  1
+                </span>
+                <span className="strong">{text.steps[0]}</span>
+              </p>
+            )}
+            <a className="button primary" href={href({ name: "device", ip: first.device.ip })}>
+              {t("dashboard.showMe")}
+            </a>
+          </div>
         </section>
       ) : (
-        <section className="fix-first all-good">
-          <h2 className="h2">{t("dashboard.allGood")}</h2>
+        <section className="fix-first tint-ok">
+          <h2 className="h3">{t("dashboard.allGood")}</h2>
           <p className="muted">{t("dashboard.allGoodText")}</p>
         </section>
       )}
 
-      <section className="row gap-l" aria-label={t("dashboard.bySeverity")}>
+      <section className="row" aria-label={t("dashboard.bySeverity")}>
         {(["high", "medium", "low", "info"] as const).map((severity) => (
           <SeverityBadge key={severity} severity={severity} count={counts[severity]} />
         ))}
       </section>
 
-      {diff && (diff.devices_added.length > 0 || diff.ports_opened.length > 0) && (
-        <section className="alerts">
-          {diff.devices_added.map((ip) => (
-            <p key={ip} className="alert-line">
-              <IconBell />
-              <span className="grow">{t("dashboard.newDevice", { ip })}</span>
-              <a href={href({ name: "device", ip })}>{t("common.open")}</a>
-            </p>
-          ))}
-          {diff.ports_opened.map((port) => (
-            <p key={`${port.ip}-${port.protocol}-${port.port}`} className="alert-line">
-              <IconBell />
-              <span className="grow">{t("dashboard.newPort", { ip: port.ip, port: port.port, service: port.service ?? "" })}</span>
-            </p>
-          ))}
+      {diff && changes > 0 && (
+        <section className="changes">
+          <button type="button" className="changes-toggle" aria-expanded={alertsOpen} aria-controls="changes-list" onClick={toggleAlerts}>
+            <IconBell />
+            <span className="grow">{t("dashboard.changesCount", { count: changes })}</span>
+            <span className="muted">{alertsOpen ? t("common.hide") : t("common.show")}</span>
+            <IconChevron open={alertsOpen} />
+          </button>
+          {alertsOpen && (
+            <ul id="changes-list" className="changes-list">
+              {diff.devices_added.map((ip) => (
+                <li key={ip}>
+                  <span className="grow">{t("dashboard.newDevice", { ip })}</span>
+                  <a href={href({ name: "device", ip })}>{t("common.open")}</a>
+                </li>
+              ))}
+              {diff.ports_opened.map((port) => (
+                <li key={`${port.ip}-${port.protocol}-${port.port}`}>{t("dashboard.newPort", { ip: port.ip, port: port.port, service: port.service ?? "" })}</li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
     </div>

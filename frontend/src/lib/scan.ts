@@ -5,7 +5,7 @@ import type { Device, Finding, Scan, Severity } from "../api/proposedTypes";
 export const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1, info: 0 };
 
 export function mascotState(score: number | null | undefined): AjarState {
-  if (score === null || score === undefined) return "locked";
+  if (score === null || score === undefined) return "unknown";
   if (score >= 100) return "locked";
   if (score >= 80) return "shut";
   if (score >= 50) return "ajar";
