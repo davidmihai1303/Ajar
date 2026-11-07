@@ -61,4 +61,36 @@ def test_cli_masks_mac_in_filenames_even_on_errors(tmp_path, capsys):
     assert main(["analyze-file", str(path)]) == 1
     assert "D8:43:AE:xx:xx:xx" in capsys.readouterr().err
     assert main(["analyze", str(tmp_path)]) == 0
-    assert "printer-D8:43:AE:xx:xx:xx.xml,ERROR" in (tmp_path / "scores.csv").read_text()
+    # The CSV keeps the real file name so it matches the jury's answer key (see export.export_folder).
+    assert "printer-D8-43-AE-2E-C3-6D.xml,ERROR" in (tmp_path / "scores.csv").read_text()
+    assert "D8-43-AE-2E-C3-6D" not in capsys.readouterr().out
+
+
+def read_rows(path: Path) -> list:
+    with path.open(encoding="utf-8", newline="") as fh:
+        return list(csv.reader(fh))
+
+
+def test_csv_keeps_the_real_file_name_even_when_it_looks_like_a_mac(tmp_path):
+    """A Test Set name with 12 hex digits must reach the CSV unchanged, or its rows miss the key."""
+    names = ["T1_home.xml", "T5_202611081200.xml", "capture-0123456789ab.xml", "scan_aabbccddeeff.xml"]
+    source = tmp_path / "in"
+    source.mkdir()
+    for name in names:
+        (source / name).write_bytes((FIXTURES / "V1_home_basic.xml").read_bytes())
+    (source / "broken_aabbccddeeff.xml").write_bytes((FIXTURES / "V7_broken.xml").read_bytes())
+
+    assert main(["analyze", str(source), "--out", str(tmp_path / "out")]) == 0
+    scores = read_rows(tmp_path / "out" / "scores.csv")[1:]
+    assert [row[0] for row in scores] == sorted(names + ["broken_aabbccddeeff.xml"])
+    assert dict(scores)["broken_aabbccddeeff.xml"] == "ERROR"
+    assert {row[0] for row in read_rows(tmp_path / "out" / "findings.csv")[1:]} == set(names)
+
+
+def test_analyze_accepts_a_single_file_for_the_live_rerun(tmp_path):
+    """Live check #1: one Test Set file re-run gives exactly its rows of the full upload."""
+    assert main(["analyze", str(FIXTURES), "--out", str(tmp_path / "all")]) == 0
+    assert main(["analyze", str(FIXTURES / "V4_legacy.xml"), "--out", str(tmp_path / "one")]) == 0
+    expected = [row for row in read_rows(tmp_path / "all" / "findings.csv")[1:] if row[0] == "V4_legacy.xml"]
+    assert read_rows(tmp_path / "one" / "findings.csv")[1:] == expected
+    assert read_rows(tmp_path / "one" / "scores.csv") == [["file", "network_score"], ["V4_legacy.xml", "25"]]
