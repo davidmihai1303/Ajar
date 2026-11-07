@@ -6,7 +6,7 @@ import AjarMascot from "./AjarMascot";
 
 export default function AjarDock() {
   const { scan, scanning, ready, placement, anchor, bubble, setBubble, t } = useApp();
-  const score = scan?.score ?? null;
+  const score = scan?.error ? null : scan?.score ?? null;
   // Until the last scan has loaded, Ajar waits calmly instead of flashing "locked".
   const state = scanning || !ready ? "shut" : mascotState(score);
   const level = scoreLevel(score);
@@ -33,7 +33,7 @@ export default function AjarDock() {
         ) : score === null ? (
           <>
             <span className="serif ajar-score-unknown">{t("score.unknown")}</span>
-            <span className="muted">{t("score.noScanYet")}</span>
+            <span className="muted">{t(scan ? "dashboard.unassessed" : "score.noScanYet")}</span>
           </>
         ) : (
           <>

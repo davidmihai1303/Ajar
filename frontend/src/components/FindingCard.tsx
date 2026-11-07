@@ -1,6 +1,6 @@
 // One finding: plain title, ≤2-sentence explanation, ordered fix steps; technical evidence collapsed.
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, Finding } from "../api/proposedTypes";
 import { useApp } from "../state/AppState";
@@ -11,11 +11,19 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
   const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off" | "noAnswer">("idle");
+  const active = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setRephrased(null);
+    setRephraseState("idle");
+    return () => {
+      active.current?.abort();
+      active.current = null;
+    };
+  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, lang]);
 
   useEffect(() => {
     let alive = true;
-    setRephrased(null);
-    setRephraseState("idle");
     api
       .explain(finding.code, lang)
       .then((value) => alive && setText(value))
@@ -30,9 +38,14 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
       setRephraseState("off");
       return;
     }
+    if (active.current) return;
+    const controller = new AbortController();
+    active.current = controller;
     setRephraseState("loading");
     try {
-      const answer = await api.ask(scan.id, t("finding.rephraseQuestion", { code: finding.code, device: deviceName, ip: finding.ip }), lang);
+      const question = t("finding.rephraseQuestion", { code: finding.code, device: deviceName, ip: finding.ip });
+      const answer = await api.ask(scan.id, question, lang, controller.signal);
+      if (controller.signal.aborted) return;
       if (!answer.available) setRephraseState("off");
       else if (!answer.can_answer || !answer.answer) setRephraseState("noAnswer");
       else {
@@ -40,7 +53,9 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
         setRephraseState("idle");
       }
     } catch {
-      setRephraseState("off");
+      if (!controller.signal.aborted) setRephraseState("off");
+    } finally {
+      if (active.current === controller) active.current = null;
     }
   };
 

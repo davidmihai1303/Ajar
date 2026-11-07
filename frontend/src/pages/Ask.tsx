@@ -1,5 +1,5 @@
-// Optional Q&A grounded only in the current scan. Asks for consent before anything leaves the computer.
-import { useState, type FormEvent } from "react";
+// Optional local Q&A grounded only in the current scan.
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { formatDate } from "../i18n";
 import { useApp } from "../state/AppState";
@@ -23,9 +23,27 @@ export default function Ask() {
   const [busy, setBusy] = useState(false);
   const [askConsent, setAskConsent] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [off, setOff] = useState(false);
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => {
+    if (aiConsent !== true && active.current) {
+      active.current.abort();
+      active.current = null;
+      setBusy(false);
+    }
+  }, [aiConsent]);
+
+  const turnOff = () => {
+    active.current?.abort();
+    active.current = null;
+    setBusy(false);
+    setPending(null);
+    setAskConsent(false);
+    setAiConsent(false);
+  };
 
   const send = async (text: string, consented = false) => {
+    if (!scan || active.current || (aiConsent === false && !consented)) return;
     const trimmed = text.trim();
     if (!trimmed) {
       setError(true);
@@ -36,14 +54,15 @@ export default function Ask() {
       setAskConsent(true);
       return;
     }
-    if (!scan) return;
+    const controller = new AbortController();
+    active.current = controller;
     setQuestion("");
     setMessages((list) => [...list, { from: "user", text: trimmed }]);
     setBusy(true);
     try {
-      const answer = await api.ask(scan.id, trimmed, lang);
+      const answer = await api.ask(scan.id, trimmed, lang, controller.signal);
+      if (controller.signal.aborted) return;
       if (!answer.available) {
-        setOff(true);
         setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
       } else if (!answer.can_answer || !answer.answer) {
         setMessages((list) => [...list, { from: "ajar", text: t("ask.cannotAnswer"), muted: true }]);
@@ -51,10 +70,13 @@ export default function Ask() {
         setMessages((list) => [...list, { from: "ajar", text: answer.answer as string }]);
       }
     } catch {
-      setOff(true);
+      if (controller.signal.aborted) return;
       setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
     } finally {
-      setBusy(false);
+      if (active.current === controller) {
+        active.current = null;
+        setBusy(false);
+      }
     }
   };
 
@@ -70,6 +92,10 @@ export default function Ask() {
         {scan && <p className="muted">{t("ask.about", { date: formatDate(scan.created_at, lang), ssid: scan.ssid ?? t("network.unknownName") })}</p>}
       </div>
 
+      {!scan && <p className="muted">{t("common.noScan")}</p>}
+      {aiConsent === true && (
+        <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
+      )}
       {aiConsent === false && (
         <ErrorBanner
           tone="info"
@@ -82,7 +108,6 @@ export default function Ask() {
           {t("ask.declined")}
         </ErrorBanner>
       )}
-      {off && messages.length === 0 && <ErrorBanner tone="info">{t("ask.off")}</ErrorBanner>}
 
       <div className="chat" aria-live="polite">
         {messages.map((message, index) =>
@@ -102,7 +127,7 @@ export default function Ask() {
       <form className="composer-wrap" onSubmit={submit}>
         <div className="row">
           {SUGGESTIONS.map((key) => (
-            <button key={key} type="button" className="pill" onClick={() => void send(t(key))} disabled={!scan || busy}>
+            <button key={key} type="button" className="pill" onClick={() => void send(t(key))} disabled={!scan || busy || aiConsent === false}>
               {t(key)}
             </button>
           ))}
@@ -113,6 +138,7 @@ export default function Ask() {
           </label>
           <textarea
             id="ask-question"
+            disabled={!scan || aiConsent === false}
             rows={2}
             value={question}
             placeholder={t("ask.placeholder")}
@@ -129,7 +155,7 @@ export default function Ask() {
             aria-invalid={error}
             aria-describedby={error ? "ask-error" : undefined}
           />
-          <button type="submit" className="icon-button primary" aria-label={t("ask.send")} disabled={!scan || busy}>
+          <button type="submit" className="icon-button primary" aria-label={t("ask.send")} disabled={!scan || busy || aiConsent === false}>
             <IconSend />
           </button>
         </div>
@@ -144,11 +170,7 @@ export default function Ask() {
       {askConsent && (
         <PermissionDialog
           kind="ai"
-          onCancel={() => {
-            setAskConsent(false);
-            setPending(null);
-            setAiConsent(false);
-          }}
+          onCancel={turnOff}
           onAccept={() => {
             setAskConsent(false);
             setAiConsent(true);

@@ -12,7 +12,7 @@ const AJAR_H = 240; // mascot + score lines
 const GAP = 40;
 
 export default function Welcome() {
-  const { t, network, agentDown, startScanFlow, setAnchor } = useApp();
+  const { t, demo, network, agentDown, scanProblem, lang, startScanFlow, setAnchor } = useApp();
   const column = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -49,11 +49,12 @@ export default function Welcome() {
               <IconWifi />
               <div className="stack">
                 <span className="strong">{network?.ssid ?? (agentDown ? t("network.agentDownShort") : t("network.unknownName"))}</span>
-                <span className="muted">{network ? t("welcome.connected", { subnet: network.subnet }) : t("welcome.notDetected")}</span>
+                <span className="muted">{network ? t("welcome.connected", { subnet: network.subnet }) :
+                  scanProblem?.kind === "refused" ? scanProblem.refusal[lang === "ro" ? "reason_ro" : "reason_en"] : t("welcome.notDetected")}</span>
               </div>
             </div>
-            <button type="button" className="button primary large" onClick={startScanFlow} disabled={!network}>
-              {t("welcome.start")}
+            <button type="button" className="button primary large" onClick={startScanFlow}>
+              {t(demo ? "scan.demo.button" : "welcome.start")}
             </button>
           </div>
           <div className="row center">

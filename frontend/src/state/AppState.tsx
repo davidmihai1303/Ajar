@@ -6,7 +6,7 @@ import { makeT, type TFunction } from "../i18n";
 import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
-export type ScanProblem = { kind: "refused"; refusal: ScanRefusal } | { kind: "agent" } | { kind: "failed" };
+export type ScanProblem = { kind: "refused"; refusal: ScanRefusal } | { kind: "agent" | "changed" | "failed" };
 export type AjarPlacement = "corner" | "dialog" | "center" | "anchor";
 export interface AjarAnchor {
   x: number;
@@ -38,6 +38,7 @@ interface AppState {
   ready: boolean;
   demo: boolean;
   network: NetworkInfo | null;
+  consentNetwork: NetworkInfo | null;
   agentDown: boolean;
   history: HistoryItem[];
   scan: Scan | null;
@@ -61,7 +62,6 @@ interface AppState {
   setAnchor: (value: AjarAnchor | null) => void;
   bubble: string | null;
   setBubble: (text: string | null) => void;
-  refreshNetwork: () => Promise<void>;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -76,6 +76,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => (store.get("ajar.lang") === "en" ? "en" : "ro"));
   const [ready, setReady] = useState(false);
   const [network, setNetwork] = useState<NetworkInfo | null>(null);
+  const [consentNetwork, setConsentNetwork] = useState<NetworkInfo | null>(null);
+  const preparingConsent = useRef(false);
   const [agentDown, setAgentDown] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [scan, setScan] = useState<Scan | null>(null);
@@ -118,13 +120,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     store.set("ajar.ai", value ? "yes" : "no");
   }, []);
 
+  useEffect(() => {
+    const syncConsent = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage || (event.key !== null && event.key !== "ajar.ai")) return;
+      const saved = store.get("ajar.ai");
+      setAiConsentState(saved === null ? null : saved === "yes");
+    };
+    window.addEventListener("storage", syncConsent);
+    return () => window.removeEventListener("storage", syncConsent);
+  }, []);
+
   const refreshNetwork = useCallback(async () => {
     try {
-      setNetwork(await api.network());
+      const current = await api.network();
+      setNetwork(current);
       setAgentDown(false);
-    } catch {
+      return current;
+    } catch (error) {
       setNetwork(null);
-      setAgentDown(true);
+      if (error instanceof ApiError && error.refusal) {
+        setAgentDown(false);
+        setScanProblem({ kind: "refused", refusal: error.refusal });
+      } else {
+        setAgentDown(true);
+        setScanProblem({ kind: "agent" });
+      }
+      return null;
     }
   }, []);
 
@@ -172,33 +193,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const runScan = useCallback(async () => {
+    if (!consentNetwork) return;
     setFlow(null);
+    setConsentNetwork(null);
     setScanProblem(null);
     setScanning(true);
     const previousId = history[0]?.id;
     try {
-      const result = await api.startScan();
+      const current = await refreshNetwork();
+      if (!current || current.interface !== consentNetwork.interface || current.subnet !== consentNetwork.subnet ||
+          current.gateway !== consentNetwork.gateway || current.ssid !== consentNetwork.ssid) {
+        if (current) setScanProblem({ kind: "changed" });
+        navigate({ name: "scan" });
+        return;
+      }
+      const result = await api.startScan(consentNetwork);
       setScan(result);
-      await loadHistory();
-      setScanning(false);
+      await loadHistory().catch(() => undefined);
       navigate({ name: "dashboard" });
       void notifyChanges(previousId, result);
       if (typeof Notification !== "undefined" && Notification.permission === "default" && !store.get("ajar.ack.notify")) {
         setFlow("notify");
       }
     } catch (error) {
-      setScanning(false);
       if (error instanceof ApiError && error.refusal) setScanProblem({ kind: "refused", refusal: error.refusal });
       else if (error instanceof ApiError && (error.status === 502 || error.status === 503 || error.status === 504)) setScanProblem({ kind: "agent" });
       else setScanProblem({ kind: "failed" });
       navigate({ name: "scan" });
+    } finally {
+      setScanning(false);
     }
-  }, [history, loadHistory, notifyChanges]);
+  }, [consentNetwork, history, loadHistory, notifyChanges, refreshNetwork]);
 
-  const startScanFlow = useCallback(() => {
+  const startScanFlow = useCallback(async () => {
+    if (preparingConsent.current) return;
+    preparingConsent.current = true;
     setScanProblem(null);
+    const current = await refreshNetwork();
+    preparingConsent.current = false;
+    if (!current) return navigate({ name: "scan" });
+    setConsentNetwork(current);
     setFlow("consent");
-  }, []);
+  }, [refreshNetwork]);
 
   const acceptFlow = useCallback(() => {
     if (flow === "consent") {
@@ -221,16 +257,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const cancelFlow = useCallback(() => {
     if (flow === "notify") store.set("ajar.ack.notify", "yes");
+    setConsentNetwork(null);
     setFlow(null);
   }, [flow]);
 
   const importFiles = useCallback(
     async (files: File[]) => {
       const results = await api.importFiles(files);
-      const items = await loadHistory();
+      // Preserve the import response even if the follow-up history request fails.
+      const items = await loadHistory().catch(() => []);
       const lastGood = [...results].reverse().find((item) => item.scan_id);
-      if (lastGood?.scan_id) await selectScan(lastGood.scan_id);
-      else if (!scanRef.current && items[0]) await selectScan(items[0].id);
+      if (lastGood?.scan_id) await selectScan(lastGood.scan_id).catch(() => undefined);
+      else if (!scanRef.current && items[0]) await selectScan(items[0].id).catch(() => undefined);
       return results;
     },
     [loadHistory, selectScan],
@@ -252,6 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ready,
     demo: isDemo(),
     network,
+    consentNetwork,
     agentDown,
     history,
     scan,
@@ -275,7 +314,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAnchor,
     bubble,
     setBubble,
-    refreshNetwork,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

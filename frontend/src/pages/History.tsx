@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { ScanDiff } from "../api/proposedTypes";
 import { formatDate } from "../i18n";
 import { scoreLevel } from "../lib/scan";
+import { publicFilename } from "../lib/filename";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import Dialog from "../components/Dialog";
@@ -22,6 +23,21 @@ export default function History() {
   const [toId, setToId] = useState(readable[0]?.id ?? "");
   const [picked, setPicked] = useState<ScanDiff | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
+
+  const removeHistory = async () => {
+    setDeleting(true);
+    setDeleteFailed(false);
+    try {
+      await deleteHistory();
+      setConfirmDelete(false);
+    } catch {
+      setDeleteFailed(true);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     if (!latest || !previous) return setRecent(null);
@@ -107,7 +123,7 @@ export default function History() {
               <span className={`chip level-${scoreLevel(item.score)}`}>{item.score ?? t("history.unreadable")}</span>
               <span className="grow">
                 {formatDate(item.created_at, lang)}
-                <span className="muted"> {item.source === "live" ? t("history.live") : t("history.importedFile", { file: item.file })}</span>
+                <span className="muted"> {item.source === "live" ? t("history.live") : t("history.importedFile", { file: publicFilename(item.file) })}</span>
               </span>
               {item.score !== null && (
                 <a href={href({ name: "dashboard" })} onClick={() => void selectScan(item.id)}>
@@ -119,7 +135,7 @@ export default function History() {
         </ul>
       </details>
 
-      <button type="button" className="button danger-link self-start" onClick={() => setConfirmDelete(true)}>
+      <button type="button" className="button danger-link self-start" onClick={() => { setDeleteFailed(false); setConfirmDelete(true); }}>
         {t("history.delete")}
       </button>
 
@@ -128,19 +144,17 @@ export default function History() {
           role="alertdialog"
           title={t("history.deleteTitle")}
           icon={<IconTrash />}
-          onCancel={() => setConfirmDelete(false)}
+          onCancel={() => { if (!deleting) setConfirmDelete(false); }}
           actions={
             <>
-              <button type="button" className="button" data-autofocus onClick={() => setConfirmDelete(false)}>
+              <button type="button" className="button" data-autofocus disabled={deleting} onClick={() => setConfirmDelete(false)}>
                 {t("common.cancel")}
               </button>
               <button
                 type="button"
                 className="button danger"
-                onClick={() => {
-                  setConfirmDelete(false);
-                  void deleteHistory();
-                }}
+                disabled={deleting}
+                onClick={removeHistory}
               >
                 {t("history.deleteConfirm")}
               </button>
@@ -148,6 +162,7 @@ export default function History() {
           }
         >
           <p className="dialog-body">{t("history.deleteText")}</p>
+          {deleteFailed && <p className="field-error" role="alert">{t("history.deleteFailed")}</p>}
         </Dialog>
       )}
     </div>

@@ -18,7 +18,7 @@ const POINTS: Record<PermissionKind, number> = { consent: 2, admin: 3, network: 
 const HAS_NOTE: Record<PermissionKind, boolean> = { consent: false, admin: true, network: true, notify: false, ai: true };
 
 export default function PermissionDialog({ kind, onAccept, onCancel }: { kind: PermissionKind; onAccept: () => void; onCancel: () => void }) {
-  const { t, network, setBubble } = useApp();
+  const { t, consentNetwork: network, setBubble } = useApp();
   // Ajar walks over to the dialog and says why it is asking.
   useEffect(() => {
     setBubble(t(`perm.${kind}.bubble`));
@@ -58,6 +58,8 @@ export default function PermissionDialog({ kind, onAccept, onCancel }: { kind: P
         <dl className="facts">
           <dt>{t("network.wifi")}</dt>
           <dd className="strong">{network?.ssid ?? t("network.unknownName")}</dd>
+          <dt>{t("network.interface")}</dt>
+          <dd>{network?.interface ?? "—"}</dd>
           <dt>{t("network.subnet")}</dt>
           <dd>{network?.subnet ?? "—"}</dd>
           <dt>{t("network.gateway")}</dt>

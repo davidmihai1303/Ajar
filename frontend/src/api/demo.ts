@@ -118,7 +118,7 @@ const build = (id: string, created_at: string, source: Scan["source"], file: str
 export const demoScans: Scan[] = [
   build("demo-4", "2026-11-07T14:32:00", "live", "scan_2026-11-07_1432.xml", [router, laptop, camera, hub, tv, unknown], [...routerFindings, ...cameraFindings, hubFinding, unknownFinding]),
   build("demo-3", "2026-11-06T18:05:00", "live", "scan_2026-11-06_1805.xml", [router, laptop, hub, tv, unknown], [...routerFindings, hubFinding, unknownFinding]),
-  build("demo-2", "2026-11-04T11:20:00", "import", "lab_after.xml", [router, laptop, { ...oldServer, ports: [] }], []),
+  build("demo-2", "2026-11-04T11:20:00", "import", "lab_after.xml", [{ ...router, ports: router.ports.filter((p) => p.port === 53) }, laptop, { ...oldServer, ports: [] }], []),
   build("demo-1", "2026-11-03T10:02:00", "import", "lab_before.xml", [router, laptop, oldServer], [...routerFindings, telnetFinding]),
 ];
 
@@ -166,25 +166,25 @@ type Text = Omit<Explanation, "code" | "lang">;
 const TEXTS: Record<string, Record<Lang, Text>> = {
   CAMERA_STREAM_EXPOSED: {
     ro: {
-      title: "Oricine din rețea poate vedea imaginea camerei",
-      explanation: "Fluxul video nu cere parolă. Cine e conectat la Wi-Fi-ul tău poate vedea ce filmează camera.",
-      steps: ["Deschide aplicația camerei pe telefon.", "Activează parola pentru fluxul video.", "Alege o parolă lungă, doar a ta.", "Scanează din nou ca să verifici."],
+      title: "Serviciul video al camerei este accesibil în rețea",
+      explanation: "Scanarea a găsit serviciul prin care camera transmite imagini. Nu a verificat dacă accesul la imagini cere o parolă.",
+      steps: ["Deschide setările camerei.", "Verifică cine poate vedea fluxul video.", "Dacă folosești fluxul, cere o parolă pentru acces. Altfel, dezactivează-l."],
     },
     en: {
-      title: "Anyone on your network can watch the camera",
-      explanation: "The video stream has no password. Anyone on your Wi-Fi can see what the camera records.",
-      steps: ["Open the camera app on your phone.", "Turn on a password for the video stream.", "Pick a long password only you know.", "Scan again to check."],
+      title: "The camera’s video service is reachable on the network",
+      explanation: "The scan found the service the camera uses to stream video. It did not check whether viewing the stream requires a password.",
+      steps: ["Open the camera settings.", "Check who can view the stream.", "If you use the stream, require a password. Otherwise, turn it off."],
     },
   },
   HTTP_ADMIN_CLEARTEXT: {
     ro: {
       title: "Pagina de setări se deschide fără criptare",
-      explanation: "Parola de administrare trece prin rețea neprotejată. Cineva din rețea ar putea s-o vadă.",
+      explanation: "Pagina de setări folosește HTTP. Dacă introduci o parolă aici, cineva din rețea ar putea să o citească.",
       steps: ["Intră în setările dispozitivului.", "Activează HTTPS.", "Oprește accesul prin HTTP simplu."],
     },
     en: {
       title: "The settings page is not encrypted",
-      explanation: "The admin password travels over the network unprotected. Someone on your network could see it.",
+      explanation: "The settings page uses plain HTTP. If you enter a password here, someone on the network could read it.",
       steps: ["Open the device settings.", "Turn on HTTPS.", "Turn off plain HTTP access."],
     },
   },
@@ -202,14 +202,14 @@ const TEXTS: Record<string, Record<Lang, Text>> = {
   },
   MQTT_EXPOSED: {
     ro: {
-      title: "Hub-ul casei inteligente primește comenzi de la oricine",
-      explanation: "Serviciul MQTT, prin care vorbesc dispozitivele inteligente, nu cere parolă. Oricine din rețea poate trimite comenzi.",
-      steps: ["Deschide aplicația hub-ului.", "Activează parola pentru conexiuni.", "Repornește hub-ul și scanează din nou."],
+      title: "Serviciul de mesaje al hubului este accesibil în rețea",
+      explanation: "Scanarea a găsit MQTT, serviciul prin care dispozitivele inteligente schimbă mesaje. Nu a verificat cine poate trimite comenzi.",
+      steps: ["Deschide setările MQTT ale hubului.", "Verifică ce dispozitive au voie să trimită mesaje.", "Dacă accesul anonim este permis, dezactivează-l."],
     },
     en: {
-      title: "The smart-home hub accepts commands from anyone",
-      explanation: "MQTT, the service smart devices use to talk, has no password. Anyone on your network can send commands.",
-      steps: ["Open the hub app.", "Turn on a password for connections.", "Restart the hub and scan again."],
+      title: "The hub’s messaging service is reachable on the network",
+      explanation: "The scan found MQTT, the service smart devices use to exchange messages. It did not check who can send commands.",
+      steps: ["Open the hub’s MQTT settings.", "Check which devices can send messages.", "If anonymous access is allowed, turn it off."],
     },
   },
   UNKNOWN_DEVICE: {

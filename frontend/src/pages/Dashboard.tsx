@@ -25,7 +25,8 @@ export default function Dashboard() {
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(readOpen);
-  const first = scan ? fixFirst(scan) : null;
+  const assessed = scan !== null && scan.score !== null && !scan.error;
+  const first = assessed ? fixFirst(scan) : null;
   const finding = first?.findings[0] ?? null;
   const index = scan ? history.findIndex((item) => item.id === scan.id) : -1;
   const previous = index >= 0 ? history.slice(index + 1).find((item) => item.score !== null) : undefined;
@@ -40,13 +41,13 @@ export default function Dashboard() {
   }, [finding?.code, lang]);
 
   useEffect(() => {
-    if (!scan || !previous) return setDiff(null);
+    if (!assessed || !scan || !previous) return setDiff(null);
     let alive = true;
     api.diff(previous.id, scan.id).then((value) => alive && setDiff(value)).catch(() => alive && setDiff(null));
     return () => {
       alive = false;
     };
-  }, [scan?.id, previous?.id]);
+  }, [assessed, scan?.id, previous?.id]);
 
   // Ajar says where to start, once per scan.
   useEffect(() => {
@@ -70,6 +71,13 @@ export default function Dashboard() {
   };
 
   if (!scan) return null;
+  if (!assessed) return (
+    <div className="page">
+      <h1 className="serif h1">{t("dashboard.unassessed")}</h1>
+      <p className="banner banner-error">{t(scan.error ? "scan.unreadable" : "dashboard.noScore")}</p>
+      <a className="button primary self-start" href={href({ name: "scan" })}>{t("nav.newScan")}</a>
+    </div>
+  );
   const counts = severityCounts(scan);
   const delta = previous && scan.score !== null && previous.score !== null ? scan.score - previous.score : null;
   const changes = diff ? diff.devices_added.length + diff.ports_opened.length : 0;
@@ -93,8 +101,6 @@ export default function Dashboard() {
           </a>
         )}
       </section>
-
-      {scan.error && <p className="banner banner-error">{t("scan.unreadable")}</p>}
 
       {first && finding ? (
         <section className={`fix-first tint-${finding.severity}`} aria-labelledby="fix-first-title">

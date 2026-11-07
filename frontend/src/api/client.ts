@@ -16,16 +16,23 @@ export class ApiError extends Error {
 let demo = false;
 export const isDemo = () => demo;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function checkedResponse(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, { headers: { Accept: "application/json" }, ...init });
-  const isJson = (response.headers.get("content-type") ?? "").includes("application/json");
-  const body = isJson ? await response.json() : null;
   if (!response.ok) {
-    const refusal = body && typeof body.reason_ro === "string" ? (body as ScanRefusal) : null;
-    throw new ApiError(body?.detail ?? response.statusText, response.status, refusal);
+    const body = await response.json().catch(() => null);
+    const detail = body?.detail ?? body;
+    const ro = detail?.reason_ro ?? detail?.ro;
+    const en = detail?.reason_en ?? detail?.en;
+    const refusal = typeof ro === "string" && typeof en === "string" ? { reason_ro: ro, reason_en: en } : null;
+    throw new ApiError(typeof detail === "string" ? detail : response.statusText, response.status, refusal);
   }
-  if (!isJson) throw new ApiError("Not JSON", response.status);
-  return body as T;
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await checkedResponse(path, init);
+  if (!response.headers.get("content-type")?.includes("application/json")) throw new ApiError("Not JSON", response.status);
+  return response.json();
 }
 
 /** Decides once, at start-up, whether a backend answers. */
@@ -46,7 +53,11 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 let demoHasHistory = !new URLSearchParams(window.location.search).has("fresh");
 
 export const api = {
-  network: (): Promise<NetworkInfo> => (demo ? Promise.resolve(demoNetwork) : request("/api/network")),
+  network: async (): Promise<NetworkInfo> => {
+    const info = demo ? demoNetwork : await request<NetworkInfo>("/api/network");
+    if (!info.interface || !info.subnet) throw new ApiError("Incomplete network", 502);
+    return { interface: info.interface, subnet: info.subnet, gateway: info.gateway || null, ssid: info.ssid || null };
+  },
 
   history: (): Promise<HistoryItem[]> => (demo ? Promise.resolve(demoHasHistory ? demoHistory() : []) : request("/api/history")),
 
@@ -58,8 +69,7 @@ export const api = {
       ? Promise.resolve(demoDiff(fromId, toId))
       : request(`/api/history/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`),
 
-  /** Live scan through the host agent. The backend only runs it with confirm=true. */
-  startScan: async (): Promise<Scan> => {
+  startScan: async (expectedNetwork: NetworkInfo): Promise<Scan> => {
     if (demo) {
       await wait(6000);
       demoHasHistory = true;
@@ -68,45 +78,34 @@ export const api = {
     return request("/api/scans", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ confirm: true }),
+      body: JSON.stringify({ confirm: true, expected_network: expectedNetwork }),
     });
   },
 
   importFiles: async (files: File[]): Promise<ImportResult[]> => {
-    if (demo) {
-      await wait(800);
-      demoHasHistory = true;
-      return Promise.all(
-        files.map(async (file) => {
-          const text = await file.text();
-          const readable = text.includes("<nmaprun") && text.trimEnd().endsWith("</nmaprun>");
-          return readable
-            ? { file: file.name, scan_id: demoScans[0].id, score: demoScans[0].score, error: null }
-            : { file: file.name, scan_id: null, score: null, error: "unreadable" };
-        }),
-      );
-    }
+    if (demo) throw new ApiError("Import requires the local analysis API", 503);
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
     return request("/api/scans/import", { method: "POST", body: form });
   },
 
-  deleteHistory: (): Promise<void> => {
+  deleteHistory: async (): Promise<void> => {
     if (demo) {
       demoHasHistory = false;
-      return Promise.resolve();
+      return;
     }
-    return request("/api/history", { method: "DELETE" });
+    await checkedResponse("/api/history", { method: "DELETE" });
   },
 
   explain: (code: string, lang: Lang): Promise<Explanation> =>
     demo ? Promise.resolve(demoExplanation(code, lang)) : request(`/api/explain/${encodeURIComponent(code)}?lang=${lang}`),
 
-  ask: (scanId: string, question: string, lang: Lang): Promise<AskResponse> =>
+  ask: (scanId: string, question: string, lang: Lang, signal?: AbortSignal): Promise<AskResponse> =>
     demo
       ? Promise.resolve({ available: false, can_answer: false, answer: null })
       : request("/api/ask", {
           method: "POST",
+          signal,
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ scan_id: scanId, question, lang }),
         }),

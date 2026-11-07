@@ -35,7 +35,7 @@ function Shell() {
     content = <Welcome />;
   } else {
     let page: JSX.Element;
-    if (!scan && route.name !== "scan" && route.name !== "history") {
+    if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask") {
       page = (
         <div className="page">
           <p>{t("common.noScan")}</p>
@@ -59,7 +59,7 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-          page = <Ask />;
+            page = <Ask key={scan?.id} />;
           break;
         default:
           page = <Dashboard />;

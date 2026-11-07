@@ -2,6 +2,7 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import type { ImportResult } from "../api/proposedTypes";
 import { href } from "../router";
+import { publicFilename } from "../lib/filename";
 import { useApp } from "../state/AppState";
 import ErrorBanner from "../components/ErrorBanner";
 import { IconAlert, IconShieldX, IconTerminal, IconUpload } from "../components/Icons";
@@ -9,20 +10,21 @@ import { IconAlert, IconShieldX, IconTerminal, IconUpload } from "../components/
 const AGENT_COMMAND = "python3 scanner/agent.py serve";
 
 export default function Scan() {
-  const { t, lang, network, agentDown, refreshNetwork, startScanFlow, scanProblem, importFiles, selectScan } = useApp();
+  const { t, lang, demo, network, agentDown, startScanFlow, scanProblem, importFiles, selectScan } = useApp();
   const [results, setResults] = useState<ImportResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const handle = async (files: File[]) => {
+    if (demo || busy) return;
     const xml = files.filter((file) => file.name.toLowerCase().endsWith(".xml"));
     if (xml.length === 0) return;
     setBusy(true);
     try {
       setResults(await importFiles(xml));
     } catch {
-      setResults(xml.map((file) => ({ file: file.name, scan_id: null, score: null, error: "failed" })));
+      setResults(xml.map(() => ({ file: "", scan_id: null, score: null, error: "failed" })));
     } finally {
       setBusy(false);
     }
@@ -65,6 +67,7 @@ export default function Scan() {
         </div>
       )}
       {scanProblem?.kind === "failed" && <ErrorBanner>{t("scan.failed")}</ErrorBanner>}
+      {scanProblem?.kind === "changed" && <ErrorBanner>{t("scan.changed")}</ErrorBanner>}
 
       {showAgent && (
         <div className="card problem" role="status">
@@ -78,9 +81,6 @@ export default function Scan() {
                 {copied ? t("common.copied") : t("common.copy")}
               </button>
             </div>
-            <button type="button" className="button primary self-start" onClick={() => void refreshNetwork()}>
-              {t("common.retry")}
-            </button>
           </div>
         </div>
       )}
@@ -97,47 +97,49 @@ export default function Scan() {
             <dd>{network?.gateway ?? "—"}</dd>
           </dl>
           <div className="grow" />
-          <button type="button" className="button primary large" onClick={startScanFlow} disabled={!network}>
-            {t("scan.live.button")}
+          <button type="button" className="button primary large" onClick={startScanFlow}>
+            {t(demo ? "scan.demo.button" : network ? "scan.live.button" : "common.retry")}
           </button>
           <p className="muted">{t("scan.live.duration")}</p>
         </section>
 
         <section className="card">
           <h2 className="h3">{t("scan.import.title")}</h2>
-          <label
-            className={`dropzone${dragging ? " dragging" : ""}`}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-          >
-            <IconUpload />
-            <span>
-              <span className="strong">{t("scan.import.drop")}</span> {t("scan.import.or")}
-            </span>
-            <input className="visually-hidden" type="file" accept=".xml,text/xml,application/xml" multiple onChange={onPick} />
-          </label>
+          {demo ? <p className="muted">{t("scan.import.demo")}</p> : (
+            <label
+              className={`dropzone${dragging ? " dragging" : ""}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+            >
+              <IconUpload />
+              <span>
+                <span className="strong">{t("scan.import.drop")}</span> {t("scan.import.or")}
+              </span>
+              <input className="visually-hidden" type="file" disabled={busy} accept=".xml,text/xml,application/xml" multiple onChange={onPick} />
+            </label>
+          )}
           {busy && <p className="muted">{t("scan.import.busy")}</p>}
           {results.length > 0 && (
             <ul className="results">
-              {results.map((result) => (
-                <li key={result.file}>
+              {results.map((result, index) => (
+                <li key={index}>
                   {result.error ? (
                     <>
                       <span className="danger-icon">
                         <IconAlert />
                       </span>
                       <span className="grow">
-                        <span className="block">{result.file}</span>
-                        <span className="danger-text">{t("scan.import.unreadable")}</span>
+                        <span className="block">{result.file ? publicFilename(result.file) : t("scan.import.fileNumber", { number: index + 1 })}</span>
+                        <span className="danger-text">{t(result.file ? "scan.import.unreadable" : "scan.import.failed")}</span>
                       </span>
                     </>
                   ) : (
                     <>
-                      <span className="grow">{result.file}</span>
+                      <span className="grow">{publicFilename(result.file)}</span>
                       <span className="strong">{result.score}</span>
                       <a href={href({ name: "dashboard" })} onClick={() => result.scan_id && void selectScan(result.scan_id)}>
                         {t("common.view")}
