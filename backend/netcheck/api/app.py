@@ -13,7 +13,7 @@ from starlette.staticfiles import StaticFiles
 from netcheck import config
 from netcheck.explain.llm import LLMClient
 from .agent_client import AgentClient
-from . import routes_history, routes_scans
+from . import routes_explain, routes_history, routes_scans
 
 
 def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
@@ -61,6 +61,7 @@ def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
 
     app.include_router(routes_scans.router)
     app.include_router(routes_history.router)
+    app.include_router(routes_explain.router)
 
     @app.get("/api/{missing:path}", include_in_schema=False)
     def missing_api(missing: str):

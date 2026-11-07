@@ -119,11 +119,16 @@ class FindingRef(Input):
     protocol: str | None
 
 
+class PersonalizeRequest(FindingRef):
+    scan_id: str
+    lang: Lang = "ro"
+
+
 class AskRequest(Input):
     scan_id: str
     question: str = Field(min_length=1, max_length=500)
     lang: Lang = "ro"
-    finding: FindingRef | None = None
+
 
 
 class Answer(BaseModel):
