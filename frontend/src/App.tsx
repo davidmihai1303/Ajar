@@ -2,7 +2,9 @@
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
 import { useEffect, useState } from "react";
+import MobileHeader from "./components/MobileHeader";
 import { useIsMobile } from "./lib/useIsMobile";
+import { useMobilePoller } from "./lib/useMobilePoller";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
@@ -25,6 +27,7 @@ function Shell() {
   const { t, ready, scan, scanning, flow, acceptFlow, cancelFlow, demo, collapsed } = app;
   const route = useRoute();
   const isMobile = useIsMobile();
+  useMobilePoller(isMobile);
   const [showWidget, setShowWidget] = useState(false);
   const [showDesktopDialog, setShowDesktopDialog] = useState(false);
 
@@ -42,7 +45,9 @@ function Shell() {
     content = <Welcome />;
   } else {
     let page: JSX.Element;
-    if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask") {
+    if (isMobile) {
+      page = <Dashboard />;
+    } else if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask") {
       page = (
         <div className="page">
           <p>{t("common.noScan")}</p>
@@ -72,19 +77,30 @@ function Shell() {
           page = <Dashboard />;
       }
     }
-    content = (
-      <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
-        <Sidebar
-          current={route.name}
-          onOpenWidget={() => setShowWidget((prev) => !prev)}
-          onOpenDesktopDialog={() => setShowDesktopDialog(true)}
-        />
-        <SidebarShowButton />
-        <main className="main" id="main">
-          {page}
-        </main>
-      </div>
-    );
+    if (isMobile) {
+      content = (
+        <div className="mobile-shell">
+          <MobileHeader />
+          <main className="mobile-main" id="main">
+            {page}
+          </main>
+        </div>
+      );
+    } else {
+      content = (
+        <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
+          <Sidebar
+            current={route.name}
+            onOpenWidget={() => setShowWidget((prev) => !prev)}
+            onOpenDesktopDialog={() => setShowDesktopDialog(true)}
+          />
+          <SidebarShowButton />
+          <main className="main" id="main">
+            {page}
+          </main>
+        </div>
+      );
+    }
   }
 
   return (
@@ -95,7 +111,7 @@ function Shell() {
         </div>
       )}
       {content}
-      <AjarDock />
+      {!isMobile && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
       {showWidget && (
         <MiniWidget
