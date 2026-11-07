@@ -26,11 +26,11 @@ def _parse(target: str) -> ipaddress.IPv4Network:
 
 
 def check_scope(target: str, allowlist: Iterable[str], confirm: bool) -> ipaddress.IPv4Network:
-    """Return the validated network, or raise ScopeError. Order matters: cheapest, clearest refusals first."""
-    if not confirm:
-        raise ScopeError("Live scans need explicit confirmation (--confirm).",
-                         "Scanarea live necesită confirmare explicită (--confirm).")
+    """Return the validated network, or raise ScopeError.
 
+    The target is checked BEFORE the confirmation, so a forbidden target is always refused for
+    its real reason (e.g. "public network"), even when --confirm is missing.
+    """
     net = _parse(target)
 
     if net.is_global or not net.is_private:
@@ -52,4 +52,8 @@ def check_scope(target: str, allowlist: Iterable[str], confirm: bool) -> ipaddre
         shown: str = ", ".join(str(a) for a in allowed) or "(empty)"
         raise ScopeError(f"{net} is outside the allowed networks: {shown}.",
                          f"{net} este în afara rețelelor permise: {shown}.")
+
+    if not confirm:
+        raise ScopeError("Live scans need explicit confirmation (--confirm).",
+                         "Scanarea live necesită confirmare explicită (--confirm).")
     return net

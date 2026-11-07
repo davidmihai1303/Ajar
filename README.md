@@ -203,6 +203,10 @@ docker compose up -d --build            # app → http://127.0.0.1:8001
 python3 scanner/agent.py serve          # scanner agent (normal user, separate terminal)
 ```
 
+**Build the image before the event.** The build downloads base images, Python and npm packages.
+At the venue the scanner laptop is only on the hotspot (no venue Wi-Fi, limited mobile data), so
+run `docker compose build` at home, then check that `netcheck analyze` works with the network off.
+
 ---
 
 ## 6. Usage
@@ -312,14 +316,16 @@ byte-for-byte reproducible.
 | **NFR-04 Least privilege** | Only `netcheck-nmap` runs as root, and only during a scan. The agent, the API and the UI run as normal users; the container runs as a non-root user |
 | **NFR-05 Determinism** | Findings and scores come from code only; dedicated test runs each file three times |
 | **NFR-06 Grounded AI** | The LLM only sees scan evidence and never produces findings or scores |
-| **Scope guardrail** | Explicit confirmation, connected subnet only, public and reserved ranges refused, VPN and Docker interfaces ignored, checked twice (agent + root wrapper) |
+| **Scope guardrail** | Explicit confirmation, connected subnet only, public and reserved ranges refused, VPN and Docker interfaces ignored, refused when the laptop is on more than one network (e.g. hotspot + venue cable), checked twice (agent + root wrapper) |
+| **Local agent API** | Accepts only the app's own server-side client (Host `127.0.0.1`, no browser `Origin`, JSON only), so a web page cannot start a scan |
 
 ---
 
 ## 11. Testing
 
 ```bash
-docker compose run --rm app pytest -q
+docker compose run --rm app pytest -q              # backend
+python3 -m unittest discover -s scanner/tests      # scanner (stdlib only, never scans)
 ```
 
 | Test | Checks |
@@ -331,6 +337,7 @@ docker compose run --rm app pytest -q
 | `test_lab.py` | Our lab: before → 0, after → 75 |
 | `test_determinism.py` | Same file three times → identical output |
 | `test_llm.py` | Grounding check, fallbacks, prompt injection, privacy, determinism of the LLM layer |
+| `scanner/tests/test_scanner.py` | Guard refusals (public IP, venue subnet, no `--confirm`), two networks refused, root wrapper rule, agent rejects browser / wrong-Host requests |
 
 ---
 
