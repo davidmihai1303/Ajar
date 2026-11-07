@@ -12,6 +12,7 @@ input/*
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
 .venv/
 # node
 frontend/node_modules/
