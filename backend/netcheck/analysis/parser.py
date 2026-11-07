@@ -48,26 +48,26 @@ def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
     name = os.path.basename(path)
     try:
         with open(path, "rb") as fh:
-            data = fh.read(max_bytes + 1)
+            data = fh.read(max(0, max_bytes + 1))
     except OSError:
         return ScanResult(file=name, error=ERROR_UNREADABLE)
+    return parse_bytes(data, name, max_bytes)
+
+
+def parse_bytes(data: bytes, file: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
+    """Parse a report already in memory using the same size limit as the file reader."""
     if len(data) > max_bytes:
-        return ScanResult(file=name, error=ERROR_TOO_LARGE)
-    return parse_bytes(data, name)
-
-
-def parse_bytes(data: bytes, file: str) -> ScanResult:
-    """Same as parse_scan, for XML already in memory (e.g. an upload). No size check here."""
-    if not data.strip():
-        return ScanResult(file=file, error=ERROR_UNREADABLE)
+        return ScanResult(file=file, error=ERROR_TOO_LARGE)
     try:
         root = SafeET.fromstring(data)
     except DefusedXmlException:
         return ScanResult(file=file, error=ERROR_UNSAFE)
-    except (ParseError, ValueError, UnicodeError):
+    except (ParseError, ValueError, LookupError):
         return ScanResult(file=file, error=ERROR_UNREADABLE)
     if root.tag != "nmaprun":
         return ScanResult(file=file, error=ERROR_NOT_NMAP)
+    if root.find("runstats/finished[@exit='error']") is not None:
+        return ScanResult(file=file, error=ERROR_UNREADABLE)
 
     devices = [d for d in (_parse_host(h) for h in root.findall("host")) if d is not None]
     devices.sort(key=lambda d: _ip_sort_key(d.ip))
@@ -76,7 +76,7 @@ def parse_bytes(data: bytes, file: str) -> ScanResult:
 
 def _parse_host(host: Element) -> Optional[Device]:
     status = host.find("status")
-    if status is not None and status.get("state") != "up":
+    if status is None or status.get("state") != "up":
         return None
 
     ipv4 = ipv6 = mac = vendor = ""
@@ -160,6 +160,9 @@ def _ip_sort_key(ip: str) -> tuple:
 
 
 def _int_or_none(value: Optional[str]) -> Optional[int]:
-    if value is None or not value.strip().isdigit():
+    digits = (value or "").strip()
+    # Nmap writes unsigned decimal fields. Even a 64-bit timestamp fits in 20 digits.
+    if not digits.isascii() or not digits.isdecimal():
         return None
-    return int(value)
+    digits = digits.lstrip("0") or "0"
+    return int(digits) if len(digits) <= 20 else None

@@ -50,6 +50,30 @@ def test_broken_file_gives_error_not_exception():
     assert result.file == "V7_broken.xml"
 
 
+def test_bad_xml_encoding_does_not_interrupt_folder_import(tmp_path):
+    bad = tmp_path / "bad.xml"
+    bad.write_bytes(b'<?xml version="1.0" encoding="utf-88"?><nmaprun/>')
+    results = [parse_scan(path) for path in (bad, VALIDATION / "V1_home_basic.xml")]
+    assert results[0].error == ERROR_UNREADABLE
+    assert results[1].ok and len(results[1].devices) == 3
+
+
+@pytest.mark.parametrize("hosts", [
+    "",
+    '<host><status state="up"/><address addrtype="ipv4" addr="192.0.2.5"/></host>',
+])
+def test_failed_scan_discards_partial_results(hosts):
+    report = nmap_xml(hosts + '<runstats><finished exit="error"/></runstats>')
+    result = parse_bytes(report, "failed.xml")
+    assert result.error == ERROR_UNREADABLE and result.devices == ()
+
+
+def test_successful_scan_with_no_hosts():
+    report = nmap_xml('<runstats><finished exit="success"/></runstats>')
+    result = parse_bytes(report, "empty.xml")
+    assert result.ok and result.devices == ()
+
+
 def test_devices_sorted_by_numeric_ip():
     ips = [d.ip for d in scan("V5_nonstandard_ports.xml").devices]
     assert ips == ["192.168.1.5", "192.168.1.6", "192.168.1.7", "192.168.1.8", "192.168.1.9"]
@@ -168,6 +192,28 @@ def test_oversized_file_is_refused_before_parsing(tmp_path):
     assert parse_scan(str(big), max_bytes=10_000).ok
 
 
+def test_file_and_upload_share_the_exact_size_limit(tmp_path):
+    data = nmap_xml("")
+    path = tmp_path / "upload.xml"
+    path.write_bytes(data)
+    for limit in (len(data), len(data) - 1, 0, -2):
+        uploaded = parse_bytes(data, path.name, max_bytes=limit)
+        assert parse_scan(path, max_bytes=limit) == uploaded
+        assert uploaded.error == (None if limit == len(data) else ERROR_TOO_LARGE)
+
+
+@pytest.mark.parametrize("number", ["²", "9" * 5000])
+def test_malformed_numeric_fields_preserve_valid_scan_data(number):
+    xml = (f'<nmaprun start="{number}"><host><status state="up"/>'
+           '<address addr="192.0.2.1" addrtype="ipv4"/><ports>'
+           f'<port protocol="tcp" portid="{number}"/>'
+           '<port protocol="tcp" portid="22"><state state="open"/></port>'
+           '</ports></host></nmaprun>')
+    result = parse_bytes(xml.encode(), "numbers.xml")
+    assert result.ok and result.started is None
+    assert [p.port for p in result.devices[0].ports] == [22]
+
+
 @pytest.mark.parametrize("content", [b"", b"   \n", b"not xml at all", b"<nmaprun><host>"])
 def test_garbage_is_unreadable(content):
     assert parse_bytes(content, "x.xml").error == ERROR_UNREADABLE
@@ -214,6 +260,7 @@ def test_redirect_message_is_not_a_title():
 
 def test_down_hosts_and_hosts_without_ip_are_skipped():
     hosts = ('<host><status state="down"/><address addr="10.0.0.1" addrtype="ipv4"/></host>'
+             '<host><address addr="10.0.0.3" addrtype="ipv4"/></host>'
              '<host><status state="up"/><address addr="AA:BB:CC:DD:EE:FF" addrtype="mac"/></host>'
              '<host><status state="up"/><address addr="999.1.1.1" addrtype="ipv4"/></host>'
              '<host><status state="up"/><address addr="10.0.0.2" addrtype="ipv4"/></host>')
