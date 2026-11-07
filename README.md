@@ -194,7 +194,6 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_API_KEY` | empty | only if the endpoint needs one; never committed |
 | `LLM_MODEL` | empty | model name sent to the endpoint |
 | `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
-| `LLM_ALLOW_REMOTE` | `0` | `1` allows a non-local endpoint; hostnames are still never sent to it |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
 
@@ -292,7 +291,7 @@ byte-for-byte reproducible.
   2. Every output is checked: any IP, port, CVE ID, phone number or link that is not in the scan,
      more than 2 sentences, or 0 / more than 5 fix steps → the output is rejected and the built-in text is shown.
   3. `temperature 0`, fixed seed and a cache make the same question give the same answer.
-  4. A non-local endpoint is disabled unless `LLM_ALLOW_REMOTE=1`; hostnames are never sent to it.
+  4. Model requests go directly to the MSI loopback endpoint. Environment proxies and redirects are disabled.
 - **Try it against the real model:** `docker compose run --rm app python -m netcheck.explain.smoke`
 
 ---

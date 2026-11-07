@@ -142,12 +142,26 @@ def test_untrusted_title_is_cleaned_and_sent_as_data() -> None:
     assert "untrusted" in seen[0]["messages"][0]["content"]
 
 
-def test_hostnames_not_sent_to_remote_endpoint() -> None:
-    seen: list = []
-    client = fake_llm("Fine [192.168.1.10:9100].", seen=seen, base_url="https://api.example.com/v1",
-                      allow_remote=True)
-    ask(client, "Is it safe?", EVIDENCE, "en")
-    assert "office-printer" not in seen[0]["messages"][1]["content"]
+@pytest.mark.parametrize("endpoint", ["https://example.invalid/v1", "http://192.168.1.5/v1",
+                                      "http://host.docker.internal/v1", "file:///tmp/model", "http://["])
+def test_only_loopback_models_allowed_even_with_old_opt_in(endpoint, monkeypatch):
+    monkeypatch.setenv("LLM_ALLOW_REMOTE", "1")
+    seen = []
+    client = fake_llm("unused", seen=seen, base_url=endpoint)
+    assert not client.enabled and not client.available()
+    assert not ask(client, "Is it safe?", EVIDENCE, "en").grounded
+    assert seen == []
+
+
+def test_loopback_ignores_proxy_configuration(monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://bad:invalid-port")
+    monkeypatch.setenv("ALL_PROXY", "http://bad:invalid-port")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    client = LLMClient("http://localhost:8080/v1")
+    assert client.base_url == "http://127.0.0.1:8080/v1"
+    with client._client(1) as transport:
+        assert not transport.trust_env and not transport.follow_redirects
+    assert LLMClient("http://[::1]:8080/v1").enabled
 
 
 def test_remote_endpoint_disabled_by_default() -> None:

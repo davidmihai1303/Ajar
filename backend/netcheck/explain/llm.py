@@ -17,8 +17,8 @@ How that is enforced
     3. On rejection, timeout, connection error or missing configuration the caller gets the
        built-in text (`source="static"` / `"fallback"`). The UI always has something correct.
 
-Privacy (NFR-02): if the endpoint is not on this machine or the local network, nothing is sent
-unless LLM_ALLOW_REMOTE=1, and even then hostnames are never sent.
+Privacy (NFR-02): the client connects directly to a loopback HTTP(S) endpoint.
+Environment proxy settings and redirects are disabled.
 
 Target backend: the llama-server on the MSI (OpenAI-compatible, http://127.0.0.1:8080/v1).
 
@@ -243,29 +243,32 @@ def count_sentences(text: str) -> int:
 _THINK_RE = re.compile(r"<think>.*?</think>", re.S | re.I)
 
 
-def _is_local_url(base_url: str) -> bool:
-    host: str = urlparse(base_url).hostname or ""
-    if host in ("localhost", "host.docker.internal"):
-        return True
+def _loopback_url(base_url: str) -> str:
+    """Use a numeric loopback destination for every request, including localhost."""
     try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return ip.is_loopback or ip.is_private
+        url = httpx.URL(base_url)
+        if url.scheme not in ("http", "https") or url.userinfo:
+            return ""
+        if url.host == "localhost":
+            url = url.copy_with(host="127.0.0.1")
+        if ipaddress.ip_address(url.host).is_loopback:
+            return str(url).rstrip("/")
+    except (ValueError, httpx.InvalidURL):
+        pass
+    return ""
 
 
 class LLMClient:
     """Minimal OpenAI-compatible chat client with availability caching and a small result cache."""
 
     def __init__(self, base_url: str = "", api_key: str = "", model: str = "",
-                 timeout: float = 60.0, allow_remote: bool = False,
+                 timeout: float = 60.0,
                  transport: Optional[httpx.BaseTransport] = None) -> None:
-        self.base_url: str = base_url.rstrip("/")
+        self.base_url: str = _loopback_url(base_url)
         self.api_key: str = api_key
         self.model: str = model or "local"
         self.timeout: float = timeout
-        self.is_local: bool = _is_local_url(self.base_url) if self.base_url else False
-        self.enabled: bool = bool(self.base_url) and (self.is_local or allow_remote)
+        self.enabled: bool = bool(self.base_url)
         self._transport = transport
         self._available: Optional[bool] = None
         self._checked_at: float = 0.0
@@ -275,16 +278,16 @@ class LLMClient:
     @classmethod
     def from_config(cls) -> "LLMClient":
         return cls(config.LLM_BASE_URL, config.LLM_API_KEY, config.LLM_MODEL,
-                   config.LLM_TIMEOUT, config.LLM_ALLOW_REMOTE)
+                   config.LLM_TIMEOUT)
 
     @property
     def send_hostnames(self) -> bool:
-        return self.is_local
+        return self.enabled
 
     def _client(self, timeout: float) -> httpx.Client:
         headers: dict = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         return httpx.Client(base_url=self.base_url, headers=headers, timeout=timeout,
-                            transport=self._transport)
+                            transport=self._transport, trust_env=False, follow_redirects=False)
 
     def available(self) -> bool:
         """Cheap health check, cached for 30 s, so the UI can show 'AI on/off'."""
