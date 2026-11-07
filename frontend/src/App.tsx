@@ -2,6 +2,7 @@
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
 import { useEffect, useState } from "react";
+import { useIsMobile } from "./lib/useIsMobile";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
@@ -23,12 +24,14 @@ function Shell() {
   const app = useApp();
   const { t, ready, scan, scanning, flow, acceptFlow, cancelFlow, demo, collapsed } = app;
   const route = useRoute();
+  const isMobile = useIsMobile();
   const [showWidget, setShowWidget] = useState(false);
   const [showDesktopDialog, setShowDesktopDialog] = useState(false);
 
   useEffect(() => {
     if (ready && scan && route.name === "home") navigate({ name: "dashboard" });
-  }, [ready, scan, route.name]);
+    if (isMobile && route.name === "ask") navigate({ name: "dashboard" });
+  }, [ready, scan, route.name, isMobile]);
 
   let content: JSX.Element;
   if (!ready) {

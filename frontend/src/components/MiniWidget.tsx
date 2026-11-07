@@ -1,5 +1,6 @@
 // Compact desktop floating widget displaying live security score, severity counts and quick actions.
 import { useState } from "react";
+import { downloadDesktopWrapper } from "../lib/downloadWrapper";
 import { href } from "../router";
 import { scoreLevel, severityCounts } from "../lib/scan";
 import { useApp } from "../state/AppState";
@@ -178,7 +179,7 @@ export default function MiniWidget({
             type="button"
             className="button grow"
             style={{ minHeight: 36, fontSize: 13 }}
-            onClick={onDownloadWrapper}
+            onClick={downloadDesktopWrapper}
             title={t("desktop.downloadTitle")}
           >
             <IconDownload size={16} />

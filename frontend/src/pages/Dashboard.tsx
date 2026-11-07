@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff, Severity } from "../api/proposedTypes";
 import { formatDate } from "../i18n";
-import { bySeverity, fixFirst, severityCounts } from "../lib/scan";
+import { bySeverity, fixFirst, scoreLevel, severityCounts } from "../lib/scan";
+import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
@@ -27,6 +28,36 @@ export default function Dashboard() {
   const [diff, setDiff] = useState<ScanDiff | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(readOpen);
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all" | null>(null);
+  const isMobile = useIsMobile();
+  const [mobileWidgetMode, setMobileWidgetMode] = useState(false);
+  const [mobileNotifActive, setMobileNotifActive] = useState(
+    typeof Notification !== "undefined" && Notification.permission === "granted"
+  );
+
+  const enableMobileNotifications = async () => {
+    if (typeof Notification === "undefined") return;
+    try {
+      const res = await Notification.requestPermission();
+      if (res === "granted") {
+        setMobileNotifActive(true);
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        new Notification("NetCheck", {
+          body: t("mobile.notifyActive"),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const testMobileNotification = () => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    new Notification("NetCheck Alertă", {
+      body: "Notificările pe telefon sunt active! Vei primi alerte instant când serverul detectează vulnerabilități.",
+    });
+  };
+
   const assessed = scan !== null && scan.score !== null && !scan.error;
   const first = assessed ? fixFirst(scan) : null;
   const finding = first?.findings[0] ?? null;
@@ -100,7 +131,99 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <section className="row spread end">
+      {/* Mobile Mode Switcher & Mobile Real-time Notifications */}
+      {isMobile && (
+        <div className="stack gap-m" style={{ gap: 12 }}>
+          <div className="segmented" style={{ width: "100%", justifyContent: "center" }}>
+            <button
+              type="button"
+              className={!mobileWidgetMode ? "on" : ""}
+              onClick={() => setMobileWidgetMode(false)}
+              style={{ flex: 1, textAlign: "center" }}
+            >
+              📊 {t("mobile.modeFull")}
+            </button>
+            <button
+              type="button"
+              className={mobileWidgetMode ? "on" : ""}
+              onClick={() => setMobileWidgetMode(true)}
+              style={{ flex: 1, textAlign: "center" }}
+            >
+              📱 {t("mobile.modeWidget")}
+            </button>
+          </div>
+
+          <section className="mobile-notify-card">
+            <div className="row spread center-y">
+              <div className="row" style={{ gap: 10 }}>
+                <IconBell />
+                <div className="stack" style={{ gap: 2 }}>
+                  <span className="strong">{t("mobile.notifyTitle")}</span>
+                  <span className="muted" style={{ fontSize: 13 }}>{t("mobile.notifySubtitle")}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`button ${mobileNotifActive ? "" : "primary"}`}
+                style={{ minHeight: 36, fontSize: 13, padding: "0 12px" }}
+                onClick={enableMobileNotifications}
+              >
+                {mobileNotifActive ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
+              </button>
+            </div>
+            {mobileNotifActive && (
+              <button
+                type="button"
+                className="link-button muted"
+                style={{ fontSize: 12, padding: 0 }}
+                onClick={testMobileNotification}
+              >
+                {t("mobile.testNotify")} →
+              </button>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* When in Mobile Widget Mode, show the high-contrast mobile widget */}
+      {isMobile && mobileWidgetMode ? (
+        <section className="mobile-widget-card">
+          <span className="strong" style={{ fontSize: 18, color: "var(--walnut)" }}>
+            📱 {t("mobile.widgetTitle")}
+          </span>
+          <div className="center">
+            <ScoreBadge score={scan.score} size="large" />
+          </div>
+          <div className="stack" style={{ gap: 4 }}>
+            <span className="strong" style={{ fontSize: 17 }}>
+              {scan.ssid ?? t("network.unknownName")}
+            </span>
+            <span className={allFindings.length > 0 ? "text-risky strong" : "text-safe strong"} style={{ fontSize: 14 }}>
+              {allFindings.length > 0
+                ? t("mobile.vulnerabilityDetected", { count: allFindings.length })
+                : t("mobile.networkSafe")}
+            </span>
+          </div>
+
+          <div className="row wrap center gap-m">
+            <SeverityBadge severity="high" count={counts.high} />
+            <SeverityBadge severity="medium" count={counts.medium} />
+            <SeverityBadge severity="low" count={counts.low} />
+          </div>
+
+          <button
+            type="button"
+            className="button primary large"
+            onClick={startScanFlow}
+            style={{ width: "100%", justifyContent: "center" }}
+          >
+            <IconRefresh size={18} />
+            {t("dashboard.rescan")}
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="row spread end">
         <div className="stack">
           <ScoreBadge score={scan.score} />
           <span className="muted">
@@ -272,6 +395,8 @@ export default function Dashboard() {
             </ul>
           )}
         </section>
+      )}
+        </>
       )}
     </div>
   );
