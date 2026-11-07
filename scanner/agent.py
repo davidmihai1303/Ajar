@@ -150,18 +150,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _drain_body(self) -> None:
-        """Discard pending body bytes on close to reduce resets for clients still writing."""
+        """Discard pending body bytes on close to reduce resets for clients still writing.
+
+        Bounded: one socket read of at most MAX_BODY_BYTES, with a short timeout. An invalid
+        Content-Length still gets that one bounded read, because the client did send a body.
+        """
         try:
             length: int = int(self.headers.get("Content-Length") or 0)
         except ValueError:
+            length = MAX_BODY_BYTES
+        if length <= 0:
             return
-        if 0 < length <= MAX_BODY_BYTES:
-            self.connection.settimeout(REFUSAL_DRAIN_TIMEOUT_SECONDS)
-            try:
-                # read1 makes at most one socket read, even if the body arrives in fragments.
-                self.rfile.read1(length)
-            except (TimeoutError, ConnectionError):
-                pass
+        self.connection.settimeout(REFUSAL_DRAIN_TIMEOUT_SECONDS)
+        try:
+            # read1 makes at most one socket read, even if the body arrives in fragments.
+            self.rfile.read1(min(length, MAX_BODY_BYTES))
+        except (TimeoutError, ConnectionError):
+            pass
 
     def _trusted(self, method: str) -> bool:
         ok, reason = is_trusted_request(self.headers, self.server.server_address[1], method)
@@ -194,7 +199,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             length = -1
         if length <= 0 or length > MAX_BODY_BYTES:
+            # Same as a 403: answer first, then a bounded drain, so the client is not reset.
+            self.close_connection = True
             self._send(400, {"error": "invalid body"})
+            self._drain_body()
             return
         try:
             body = json.loads(self.rfile.read(length))

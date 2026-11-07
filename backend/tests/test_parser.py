@@ -7,7 +7,7 @@ import pytest
 from netcheck.analysis.models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                                       Device, ScanResult)
 from netcheck.analysis.parser import clean_text, parse_bytes, parse_scan
-from netcheck.analysis.privacy import mask_mac
+from netcheck.analysis.privacy import mask_mac, mask_scan_filename
 
 VALIDATION = Path(__file__).parent / "fixtures" / "validation"
 GOOD_FILES = ["V1_home_basic.xml", "V2_smart_home.xml", "V3_small_office.xml", "V4_legacy.xml",
@@ -182,6 +182,18 @@ def test_no_full_mac_anywhere_in_the_result(name):
 ])
 def test_mask_mac(raw, masked):
     assert mask_mac(raw) == masked
+
+
+def test_only_valid_filename_timestamps_are_exempt_from_masking(tmp_path):
+    timestamp = "202402292359"
+    masked = "20:24:02:xx:xx:xx"
+    assert mask_scan_filename(f"{timestamp}_mac-{timestamp}.xml") == f"{timestamp}_mac-{masked}.xml"
+    assert mask_scan_filename("scan_202302292359.xml") == "scan_20:23:02:xx:xx:xx.xml"
+    assert mask_scan_filename("scan_202402292460.xml") == f"scan_{masked}.xml"
+    assert clean_text(timestamp) == mask_mac(timestamp) == masked
+    filename = f"scan_{timestamp}.xml"
+    assert parse_scan(tmp_path / filename).file == filename
+    assert parse_bytes(b"broken", filename).file == filename
 
 
 def test_mac_addresses_are_masked_in_all_scan_text_and_filenames(tmp_path):
