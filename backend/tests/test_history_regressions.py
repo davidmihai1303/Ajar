@@ -108,6 +108,29 @@ def test_round_trip_preserves_all_scan_and_finding_fields(tmp_path):
     assert get_scan(save_scan(scan, db_path=db), db).scan == scan
 
 
+def test_history_counts_each_ip_once_without_dropping_observations(tmp_path):
+    db = tmp_path / "history.sqlite"
+    before, findings, _ = analyze_file(FIXTURES / "V6a_before.xml")
+    router, *others = before.devices
+    first = replace(router, ports=router.ports[:1])
+    last = replace(router, ports=router.ports[1:], hostname="updated-router.lan")
+    repeated = replace(before, devices=(first, last, *others))
+    original_id = save_scan(before, db_path=db)
+    repeated_id = save_scan(repeated, db_path=db)
+    history = store.get_device_history(router.ip, db)
+    assert [(row["scan_id"], row["hostname"]) for row in history] == [
+        (repeated_id, last.hostname), (original_id, router.hostname),
+    ]
+    assert [(row["device_count"], row["finding_count"]) for row in list_scans(db)] == [
+        (len(before.devices), len(findings)), (len(before.devices), len(findings)),
+    ]
+    assert get_scan(repeated_id, db).scan == repeated
+    diff = get_scan_diff_with_previous(repeated_id, db)
+    assert not diff.new_devices and not diff.removed_devices
+    assert not diff.newly_opened_ports and not diff.closed_ports
+    assert diff.retained_findings == findings
+
+
 @pytest.mark.parametrize("old_version", [1, 2, 3])
 def test_upgrade_recovers_a_score_only_legacy_scan_in_a_mixed_database(tmp_path, old_version):
     db = tmp_path / "history.sqlite"

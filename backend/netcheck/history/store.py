@@ -137,12 +137,9 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
                 s.file_name,
                 s.score,
                 s.error,
-                COUNT(DISTINCT d.id) AS device_count,
-                COUNT(DISTINCT f.id) AS finding_count
+                (SELECT COUNT(DISTINCT d.ip) FROM devices d WHERE d.scan_id = s.scan_id) AS device_count,
+                (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.scan_id) AS finding_count
             FROM scans s
-            LEFT JOIN devices d ON s.scan_id = d.scan_id
-            LEFT JOIN findings f ON s.scan_id = f.scan_id
-            GROUP BY s.scan_id
             ORDER BY s.created_at DESC, s.rowid DESC
             """
         ).fetchall()
@@ -220,15 +217,15 @@ def get_score_trend(db_path: str = DB_PATH) -> list[dict]:
 
 
 def get_device_history(ip: str, db_path: str = DB_PATH) -> list[dict]:
-    """Get history of a specific device across scans by IP (FR-10)."""
+    """Return one entry per scan for this IP, using its last saved observation for the labels."""
     init_db(db_path)
     with _get_connection(db_path) as conn:
         rows = conn.execute(
             """
             SELECT s.scan_id, s.created_at, s.score, d.mac, d.vendor, d.hostname, d.device_type
-            FROM devices d
+            FROM (SELECT MAX(id) AS id FROM devices WHERE ip = ? GROUP BY scan_id) last_observation
+            JOIN devices d ON d.id = last_observation.id
             JOIN scans s ON d.scan_id = s.scan_id
-            WHERE d.ip = ?
             ORDER BY s.created_at DESC, s.rowid DESC
             """,
             (ip,),
