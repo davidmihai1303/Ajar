@@ -65,6 +65,35 @@ class TestRules(unittest.TestCase):
         self.assertEqual(len(smb_findings), 1)
         self.assertEqual(smb_findings[0].port, 139)
 
+    def test_smb_outdated_only_once_on_chosen_port(self):
+        """Outdated Samba 3.x on both 139 and 445 reports SMB_EXPOSED and OUTDATED_SERVICE once on 445."""
+        dev = Device(
+            ip="192.168.1.22",
+            vendor="Synology",
+            hostname="old-nas",
+            ports=[
+                Port(portid=139, protocol="tcp", state="open", service_name="netbios-ssn", product="Samba smbd", version="3.0.24"),
+                Port(portid=445, protocol="tcp", state="open", service_name="microsoft-ds", product="Samba smbd", version="3.0.24"),
+            ]
+        )
+        findings = evaluate_device("test.xml", dev)
+        codes = [(f.port, f.finding_code) for f in findings]
+        self.assertEqual(codes, [(445, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
+
+    def test_upnp_and_snmp_udp_only(self):
+        """UPNP_EXPOSED and SNMP_EXPOSED only trigger on UDP, never on TCP."""
+        dev = Device(
+            ip="192.168.1.1",
+            vendor="TP-Link",
+            hostname="router",
+            ports=[
+                Port(portid=1900, protocol="tcp", state="open", service_name="upnp"),
+                Port(portid=161, protocol="tcp", state="open", service_name="snmp"),
+            ]
+        )
+        findings = evaluate_device("test.xml", dev)
+        self.assertEqual(len(findings), 0)
+
     def test_unknown_device_rule(self):
         """Device with no MAC vendor and no hostname and >= 1 open port triggers UNKNOWN_DEVICE with empty port."""
         dev = Device(
@@ -81,9 +110,10 @@ class TestRules(unittest.TestCase):
         self.assertIsNone(unknown[0].port)
         self.assertEqual(unknown[0].points, 5)
 
-    def test_mini_httpd_is_not_apache(self):
-        """mini_httpd is not Apache httpd and must not trigger OUTDATED_SERVICE."""
+    def test_mini_httpd_and_tomcat_are_not_apache_httpd(self):
+        """mini_httpd and Apache Tomcat are not Apache httpd and must not trigger OUTDATED_SERVICE."""
         self.assertFalse(is_outdated_service("http", "mini_httpd", "1.19"))
+        self.assertFalse(is_outdated_service("http", "Apache Tomcat", "2.1"))
 
     def test_outdated_versions_detection(self):
         """Validates the official list of outdated versions."""
@@ -99,7 +129,7 @@ class TestRules(unittest.TestCase):
 
         # Apache httpd <= 2.2.x
         self.assertTrue(is_outdated_service("http", "Apache httpd", "2.2.34"))
-        self.assertFalse(is_outdated_service("http", "Apache", "2.4.52"))
+        self.assertFalse(is_outdated_service("http", "Apache httpd", "2.4.52"))
 
         # Microsoft IIS <= 7.5
         self.assertTrue(is_outdated_service("http", "Microsoft IIS", "7.5"))

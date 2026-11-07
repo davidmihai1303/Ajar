@@ -24,6 +24,17 @@ class TestParser(unittest.TestCase):
         self.assertTrue(result.error)
         self.assertIsNone(result.score)
 
+    def test_non_nmap_xml_returns_error(self):
+        """Valid XML that is not an <nmaprun> scan returns error=True."""
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+            f.write('<?xml version="1.0"?><html/>')
+            temp_path = f.name
+        try:
+            result = parse_xml_file(temp_path)
+            self.assertTrue(result.error)
+        finally:
+            os.remove(temp_path)
+
     def test_xxe_entity_expansion_blocked(self):
         """defusedxml blocks external entities / billion laughs attacks."""
         xxe_xml = """<?xml version="1.0"?>

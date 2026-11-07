@@ -41,6 +41,8 @@ def parse_xml_file(filepath: str) -> ScanResult:
             return ScanResult(file=filename, error=True)
 
         root = ET.fromstring(xml_bytes)
+        if root.tag != "nmaprun":
+            return ScanResult(file=filename, error=True)
     except Exception:
         # Catch ParseError, XML entity attacks, ExpatError, OS errors -> return error ScanResult
         return ScanResult(file=filename, error=True)

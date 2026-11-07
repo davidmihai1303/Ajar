@@ -17,7 +17,7 @@ def parse_major_minor(version_str: str) -> Optional[Tuple[int, int]]:
 
 def is_outdated_service(service_name: str, product: str, version: str) -> bool:
     """Check if the given software version is in the official outdated catalog list.
-    
+
     Catalog rules:
     - vsftpd 2.3.4
     - OpenSSH < 7.4
@@ -25,44 +25,39 @@ def is_outdated_service(service_name: str, product: str, version: str) -> bool:
     - Microsoft IIS <= 7.5
     - Samba <= 3.x
     """
-    prod_lower = (product or "").lower()
-    serv_lower = (service_name or "").lower()
+    prod_lower = (product or "").strip().lower()
     ver_clean = (version or "").strip()
 
-    if not prod_lower and not ver_clean:
+    if not prod_lower or not ver_clean:
         return False
 
     # 1. vsftpd 2.3.4
-    if "vsftpd" in prod_lower or (serv_lower == "ftp" and "vsftpd" in prod_lower):
+    if "vsftpd" in prod_lower:
         if ver_clean == "2.3.4" or re.search(r"\b2\.3\.4\b", ver_clean):
             return True
 
     # 2. OpenSSH < 7.4
-    if "openssh" in prod_lower or (serv_lower == "ssh" and "openssh" in prod_lower):
+    if "openssh" in prod_lower:
         parsed = parse_major_minor(ver_clean)
-        if parsed is not None:
-            if parsed < (7, 4):
-                return True
+        if parsed is not None and parsed < (7, 4):
+            return True
 
-    # 3. Apache httpd <= 2.2.x
-    if "apache" in prod_lower:
+    # 3. Apache httpd <= 2.2.x (exclude Apache Tomcat / Coyote / etc.)
+    if "apache httpd" in prod_lower or prod_lower == "apache":
         parsed = parse_major_minor(ver_clean)
-        if parsed is not None:
-            if parsed <= (2, 2):
-                return True
+        if parsed is not None and parsed <= (2, 2):
+            return True
 
     # 4. Microsoft IIS <= 7.5
     if "iis" in prod_lower or "microsoft-iis" in prod_lower:
         parsed = parse_major_minor(ver_clean)
-        if parsed is not None:
-            if parsed <= (7, 5):
-                return True
+        if parsed is not None and parsed <= (7, 5):
+            return True
 
     # 5. Samba <= 3.x
     if "samba" in prod_lower or "smbd" in prod_lower:
         parsed = parse_major_minor(ver_clean)
-        if parsed is not None:
-            if parsed[0] <= 3:
-                return True
+        if parsed is not None and parsed[0] <= 3:
+            return True
 
     return False
