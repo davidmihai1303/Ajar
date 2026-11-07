@@ -1,0 +1,20 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: netcheck-app
+    # host network: lets the app reach the scanner agent on 127.0.0.1 (Linux).
+    # The web server itself binds to 127.0.0.1 only, so it is NOT visible on the hotspot.
+    network_mode: host
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - NETCHECK_DB=/data/db/netcheck.sqlite
+      - NETCHECK_SCANS_DIR=/data/scans
+    volumes:
+      - /var/lib/netcheck/scans:/data/scans:ro   # XML written by the root wrapper
+      - ./data:/data/db                          # SQLite history (local only)
+      - ./input:/data/input                      # Validation / Test Set folders
+    restart: unless-stopped

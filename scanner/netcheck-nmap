@@ -1,0 +1,163 @@
+#!/usr/bin/python3 -I
+"""
+netcheck-nmap — the ONLY code that runs as root.
+
+Installed as /usr/local/sbin/netcheck-nmap (owner root, mode 0755) and allowed
+in sudoers without a password. It is deliberately self-contained: it must not
+import anything from the user-writable repository, otherwise a normal user
+could change that code and get it executed as root.
+
+Usage:  sudo -n /usr/local/sbin/netcheck-nmap <cidr>
+        e.g. sudo -n /usr/local/sbin/netcheck-nmap 172.20.10.0/28
+
+It re-checks the target independently of the agent (defense in depth):
+  * must be a private IPv4 network, /24 or smaller
+  * must lie inside the subnet of the interface that holds the default route
+Then it runs a FIXED nmap command (no user-supplied options) and writes the XML
+to a fixed directory. The last line printed on stdout is the XML path.
+"""
+import datetime
+import ipaddress
+import json
+import os
+import subprocess
+import sys
+
+OUT_DIR = "/var/lib/netcheck/scans"
+IP_BINARIES = ("/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip", "/bin/ip")
+NMAP_BINARIES = ("/usr/bin/nmap", "/usr/local/bin/nmap")
+SERVICES_FILES = ("/usr/share/nmap/nmap-services", "/usr/local/share/nmap/nmap-services")
+UDP_PORTS = "53,123,161,1900,5353"
+# Optional extra TCP ports (e.g. lab services outside the top 1000), root-owned file.
+EXTRA_PORTS_FILE = "/etc/netcheck/extra_tcp_ports"
+MIN_PREFIX = 24
+TIMEOUT_SECONDS = 600
+
+
+def fail(message: str, code: int = 2) -> None:
+    print(f"REFUSED: {message}", file=sys.stderr)
+    sys.exit(code)
+
+
+def first_existing(paths: tuple) -> str:
+    for p in paths:
+        if os.path.isfile(p):
+            return p
+    fail(f"required file not found: {paths}", 3)
+    return ""
+
+
+EXCLUDED_PREFIXES = ("lo", "tun", "tap", "wg", "tailscale", "zt", "ppp",
+                     "docker", "br-", "veth", "virbr", "vmnet", "vboxnet")
+
+
+def current_subnet() -> ipaddress.IPv4Network:
+    """Same selection rule as scanner/detect.py, duplicated on purpose (no imports from the repo)."""
+    ip_bin: str = first_existing(IP_BINARIES)
+    routes = json.loads(subprocess.run([ip_bin, "-j", "-4", "route", "show"],
+                                       capture_output=True, text=True).stdout or "[]")
+    addrs = json.loads(subprocess.run([ip_bin, "-j", "-4", "addr", "show"],
+                                      capture_output=True, text=True).stdout or "[]")
+    candidates: dict = {}
+    order: list = []
+    for entry in addrs:
+        name: str = entry.get("ifname", "")
+        if name.startswith(EXCLUDED_PREFIXES) or "UP" not in entry.get("flags", ["UP"]):
+            continue
+        for info in entry.get("addr_info", []):
+            if info.get("family") != "inet":
+                continue
+            ip = ipaddress.ip_address(info["local"])
+            if ip.is_private and not ip.is_loopback and not ip.is_link_local:
+                candidates[name] = ipaddress.ip_network(f"{info['local']}/{info['prefixlen']}", strict=False)
+                order.append(name)
+                break
+    if not candidates:
+        fail("no physical network with a private IPv4 address")
+    chosen: str = next((r["dev"] for r in routes
+                        if r.get("dst") == "default" and r.get("dev") in candidates), order[0])
+    return candidates[chosen]
+
+
+def extra_tcp_ports() -> str:
+    """Optional root-owned config: comma-separated ports, digits only."""
+    try:
+        with open(EXTRA_PORTS_FILE, encoding="ascii") as fh:
+            raw: str = fh.read().strip()
+    except OSError:
+        return ""
+    ports: list = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit() and 0 < int(part) < 65536:
+            ports.append(str(int(part)))
+    return ",".join(ports)
+
+
+def top_tcp_ports(limit: int = 1000) -> str:
+    path: str = first_existing(SERVICES_FILES)
+    rows: list = []
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3 or not parts[1].endswith("/tcp"):
+                continue
+            try:
+                rows.append((float(parts[2]), int(parts[1].split("/")[0])))
+            except ValueError:
+                continue
+    rows.sort(key=lambda r: (-r[0], r[1]))
+    return ",".join(str(port) for _, port in rows[:limit])
+
+
+def main() -> None:
+    if os.geteuid() != 0:
+        fail("must be run through sudo", 4)
+    if len(sys.argv) != 2:
+        fail("usage: netcheck-nmap <cidr>")
+
+    try:
+        target = ipaddress.ip_network(sys.argv[1], strict=True)
+    except ValueError:
+        fail("target is not a valid network address (e.g. 172.20.10.0/28)")
+    if target.version != 4:
+        fail("only IPv4 networks are supported")
+    if not target.is_private or target.is_loopback or target.is_link_local or target.is_multicast:
+        fail("target is not a private local network")
+    if target.prefixlen < MIN_PREFIX:
+        fail(f"target is larger than /{MIN_PREFIX}")
+
+    local = current_subnet()
+    if not target.subnet_of(local):
+        fail(f"target {target} is not inside the network this laptop is connected to ({local})")
+
+    nmap_bin: str = first_existing(NMAP_BINARIES)
+    os.makedirs(OUT_DIR, mode=0o755, exist_ok=True)
+    os.umask(0o022)
+    stamp: str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path: str = os.path.join(OUT_DIR, f"scan_{stamp}.xml")
+
+    extra: str = extra_tcp_ports()
+    tcp_ports: str = top_tcp_ports() + ("," + extra if extra else "")
+    cmd: list = [
+        nmap_bin, "-sS", "-sU", "-sV",
+        "--script", "http-title",
+        "--max-rate", "100",
+        "-p", f"T:{tcp_ports},U:{UDP_PORTS}",
+        "-oX", out_path,
+        str(target),
+    ]
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                text=True, timeout=TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        fail("scan took too long and was stopped", 5)
+    if result.returncode != 0:
+        fail(f"nmap failed: {result.stderr.strip()[:300]}", 6)
+    print(out_path)
+
+
+if __name__ == "__main__":
+    main()

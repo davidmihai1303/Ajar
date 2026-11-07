@@ -1,0 +1,6 @@
+# RO texts per finding code. explanation: max 2 sentences, no jargon. fixes: 1-5 ordered steps.
+# TODO: fill in all 15 codes.
+TELNET_OPEN:
+  title: ""
+  explanation: ""
+  fixes: []

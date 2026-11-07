@@ -1,0 +1,20 @@
+services:
+  redis:                      # → DB_EXPOSED
+    image: redis:7
+    container_name: lab-redis
+    ports:
+      - "6379:6379"
+
+  mqtt:                       # → MQTT_EXPOSED
+    image: eclipse-mosquitto:1.6
+    container_name: lab-mqtt
+    ports:
+      - "1883:1883"
+
+  web:                        # → HTTP_ADMIN_CLEARTEXT
+    image: nginx:alpine
+    container_name: lab-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web/index.html:/usr/share/nginx/html/index.html:ro

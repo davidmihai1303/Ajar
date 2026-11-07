@@ -1,0 +1,22 @@
+# secrets / local config
+.env
+.api_key
+*.key
+*.pem
+*.env.local
+# local data (history, scans, test-set inputs) - personal data stays on this machine
+data/
+input/*
+!input/.gitkeep
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# node
+frontend/node_modules/
+frontend/dist/
+# os / editors
+.DS_Store
+.idea/
+.vscode/
