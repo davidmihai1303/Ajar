@@ -326,7 +326,7 @@ export default function Dashboard() {
           >
             {t("dashboard.filterAll", { count: allFindings.length })}
           </button>
-          {(["high", "medium", "low", "info"] as const).map((severity) => {
+          {(["high", "medium", "low"] as const).map((severity) => {
             const isSelected = selectedSeverity === severity;
             return (
               <button
