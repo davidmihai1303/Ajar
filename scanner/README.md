@@ -30,6 +30,19 @@ Wrapper-ul acceptă un singur argument (subnetul) și construiește singur coman
 **VPN / Docker:** interfețele `tun*`, `wg*`, `tailscale*`, `docker*`, `br-*` etc. sunt ignorate la detectare,
 ca un VPN de firmă să nu fie confundat cu rețeaua de acasă.
 
+**Mai multe rețele:** dacă laptopul e conectat la mai multe rețele fizice în același timp (de exemplu hotspot
+pe Wi-Fi și cablul sălii), scanarea e refuzată, atât de agent, cât și de wrapper. Ruta implicită ar arăta
+spre rețeaua sălii, iar aceasta ar ajunge în allowlist. Deconectează tot în afară de hotspot.
+
+**Agentul HTTP** acceptă doar clientul aplicației: Host `127.0.0.1`/`localhost`, fără header `Origin`,
+`Content-Type: application/json` la POST. O pagină web deschisă în browser nu poate porni o scanare.
+
+## Teste
+
+```bash
+python3 -m unittest discover -s scanner/tests -v    # doar biblioteca standard, nu scanează nimic
+```
+
 **De ce e wrapper-ul copiat în `/usr/local/sbin`?** Dacă sudo ar rula un fișier din repo
 (editabil de david), oricine cu acces la contul david l-ar putea modifica și rula ca root.
 După orice modificare a wrapper-ului, rulați din nou `install.sh`.
