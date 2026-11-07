@@ -1,0 +1,63 @@
+/* Ajar mascot: the door that opens wider the more doors your network leaves open.
+   States: shut (calm), ajar (worried), wide (terrified), locked (happy). */
+.ajar { display: block; width: 100%; }
+.ajar svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.ajar .door-swing,
+.ajar .door-sway { transform-box: view-box; transform-origin: 98px 125px; }
+.ajar .door-swing { transition: transform 0.6s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.ajar[data-state="ajar"] .door-swing { transform: scaleX(0.62) skewY(-3deg); }
+.ajar[data-state="wide"] .door-swing { transform: scaleX(-0.55) skewY(4deg); }
+.ajar[data-state="wide"] .door-sway { animation: ajar-sway 1.8s ease-in-out infinite; }
+@keyframes ajar-sway { 50% { transform: scaleX(0.88); } }
+
+.ajar .face { animation: ajar-breathe 3.4s ease-in-out infinite; }
+@keyframes ajar-breathe { 50% { transform: translateY(1.5px); } }
+.ajar[data-state="wide"] .face { animation: ajar-shake 0.14s linear infinite; }
+@keyframes ajar-shake { 25% { transform: translate(-1.2px, 0.5px); } 75% { transform: translate(1.2px, -0.5px); } }
+
+.ajar .react { transform-box: fill-box; transform-origin: center; }
+.ajar.reacting .react { animation: ajar-pop 0.45s ease-out; }
+@keyframes ajar-pop { 30% { transform: translateY(-6px) scale(1.06); } }
+
+.ajar .eye { transform-box: fill-box; transform-origin: center; }
+.ajar .eye.blink { animation: ajar-blink 0.18s ease-in-out; }
+@keyframes ajar-blink { 50% { transform: scaleY(0.1); } }
+.ajar .eye-size { transform-box: fill-box; transform-origin: center; transition: transform 0.3s; }
+.ajar[data-state="wide"] .eye-size { transform: scale(1.28); }
+.ajar .pupil { transition: transform 0.12s ease-out; }
+.ajar .pupil-dot { transform-box: fill-box; transform-origin: center; transition: transform 0.3s; }
+.ajar[data-state="ajar"] .pupil-dot { transform: translate(2px, -2px); }
+.ajar[data-state="unknown"] .pupil-dot { transform: translate(1.5px, -2.5px); }
+.ajar .question { transform-box: fill-box; transform-origin: 50% 90%; animation: ajar-wonder 2.4s ease-in-out infinite; }
+@keyframes ajar-wonder { 50% { transform: translateY(-4px) rotate(10deg); } }
+.ajar[data-state="wide"] .pupil-dot { transform: scale(0.42); }
+
+.ajar .wobble { transform-box: fill-box; transform-origin: center; animation: ajar-wobble 0.45s ease-in-out infinite alternate; }
+@keyframes ajar-wobble { to { transform: translateY(1.2px) scaleX(0.94); } }
+.ajar .drop { transform-box: fill-box; animation: ajar-drip 2.6s ease-in infinite; }
+.ajar .drop.b { animation-delay: 0.6s; }
+.ajar[data-state="wide"] .drop { animation-duration: 1.1s; }
+@keyframes ajar-drip { 0% { transform: translateY(-3px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(16px); opacity: 0; } }
+
+.ajar .st { display: none; }
+.ajar[data-state="unknown"] .s-unknown,
+.ajar[data-state="shut"] .s-shut,
+.ajar[data-state="ajar"] .s-ajar,
+.ajar[data-state="wide"] .s-wide,
+.ajar[data-state="locked"] .s-locked { display: inline; }
+
+.ajar .wind { opacity: 0; transition: opacity 0.3s; }
+.ajar[data-state="wide"] .wind { opacity: 1; }
+.ajar .wind path { stroke-dasharray: 16 10; animation: ajar-wind 1.1s linear infinite; }
+@keyframes ajar-wind { to { stroke-dashoffset: -52; } }
+
+.ajar .lock { transform-box: view-box; transform: translateY(-46px); opacity: 0; transition: transform 0.5s cubic-bezier(0.3, 1.7, 0.6, 1), opacity 0.15s; }
+.ajar[data-state="locked"] .lock { transform: none; opacity: 1; }
+.ajar .sparkle { transform-box: fill-box; transform-origin: center; animation: ajar-twinkle 1.4s ease-in-out infinite; }
+.ajar .sparkle.b { animation-delay: 0.5s; }
+@keyframes ajar-twinkle { 50% { transform: scale(0.4); opacity: 0.4; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ajar *, .ajar { animation: none !important; transition: none !important; }
+}

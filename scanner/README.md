@@ -90,3 +90,9 @@ services:
       - /var/lib/netcheck/scans:/data/scans:ro
       - ./data:/data/db
 ```
+
+Pentru o scanare prin HTTP, aplicația citește `GET /network` înainte de confirmare.
+Cererea `POST /scan` trebuie să conțină `confirm: true` și obiectul `expected_network`
+cu valorile afișate pentru `interface`, `subnet`, `gateway` și `ssid`. Pentru un
+gateway sau SSID necunoscut se trimite `null`. Agentul detectează din nou rețeaua
+și refuză scanarea dacă valorile diferă.
