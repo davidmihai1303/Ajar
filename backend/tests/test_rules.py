@@ -192,6 +192,24 @@ class TestRules(unittest.TestCase):
         self.assertTrue(is_outdated_service("Samba smbd", "3.0.24"))
         self.assertFalse(is_outdated_service("Samba smbd", "4.15"))
 
+    def test_upper_bound_must_qualify_for_the_specific_catalog_rule(self):
+        for version, expected_score in [
+            ("3.6 or older", 70), ("3.6 or earlier", 70), ("3.X (OR OLDER)", 70),
+            ("3.0.14a (Debian) and earlier", 70), ("3.6 or older (Debian)", 70), ("4.0 or older", 90),
+            ("3.6 or older (higher versions possible)", 90),
+            ("3.6 or newer", 90), ("3.6 or later", 90), ("3.6 or newer or older", 90),
+        ]:
+            with self.subTest(version=version):
+                nas = Device(ip="192.0.2.1", hostname="nas", ports=(
+                    Port("tcp", 445, "open", "microsoft-ds", "Samba smbd", version),
+                ))
+                self.assertEqual(compute_score(evaluate_device(nas)), expected_score)
+        self.assertTrue(is_outdated_service("OpenSSH", "7.3 or older"))
+        self.assertFalse(is_outdated_service("OpenSSH", "7.4 or older"))
+        self.assertTrue(is_outdated_service("Apache httpd", "2.2.x or earlier"))
+        self.assertTrue(is_outdated_service("Microsoft IIS", "7.5 (or earlier)"))
+        self.assertFalse(is_outdated_service("vsftpd", "2.3.4 or older"))
+
 
 if __name__ == "__main__":
     unittest.main()
