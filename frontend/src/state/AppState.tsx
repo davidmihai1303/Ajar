@@ -80,7 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const saved = store.get("ajar.ai");
     return saved === null ? null : saved === "yes";
   });
-  const [collapsed, setCollapsedState] = useState(() => store.get("ajar.sidebar") === "collapsed");
+  const [collapsed, setCollapsedState] = useState(() => store.get("ajar.sidebar") === "hidden");
   const [dialogs, setDialogs] = useState(0);
   const [bubble, setBubble] = useState<string | null>(null);
   const t = useMemo(() => makeT(lang), [lang]);
@@ -98,7 +98,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setCollapsed = useCallback((value: boolean) => {
     setCollapsedState(value);
-    store.set("ajar.sidebar", value ? "collapsed" : "open");
+    store.set("ajar.sidebar", value ? "hidden" : "open");
   }, []);
 
   const setAiConsent = useCallback((value: boolean) => {

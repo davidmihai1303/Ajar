@@ -7,7 +7,7 @@ import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
 import ErrorBanner from "./components/ErrorBanner";
 import PermissionDialog from "./components/PermissionDialog";
-import Sidebar from "./components/Sidebar";
+import Sidebar, { SidebarShowButton } from "./components/Sidebar";
 import Ask from "./pages/Ask";
 import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
@@ -66,8 +66,9 @@ function Shell() {
       }
     }
     content = (
-      <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
+      <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
         <Sidebar current={route.name} />
+        <SidebarShowButton />
         <main className="main" id="main">
           {page}
         </main>

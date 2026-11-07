@@ -8,7 +8,6 @@
   "ajar.say.wide": "Ușile sunt larg deschise! Hai să le închidem acum.",
   "ajar.say.locked": "Totul e încuiat. Bravo!",
   "ajar.talk": "Ajar, mascota aplicației. Apasă ca să-ți spună ceva.",
-
   "score.outOf": "scor {score} din 100",
   "score.unknown": "Scor necunoscut",
   "score.noScanYet": "Încă nicio scanare",
@@ -17,7 +16,6 @@
   "score.level.risky": "Riscant",
   "score.level.unknown": "Necunoscut",
   "score.of100": "din 100",
-
   "common.close": "Închide",
   "common.open": "Deschide",
   "common.technical": "Detalii tehnice",
@@ -29,7 +27,6 @@
   "common.loading": "Se încarcă…",
   "common.noScan": "Încă nu ai nicio scanare. Pornește una ca să vezi rezultatele aici.",
   "common.demo": "Nu mă pot conecta la serverul Ajar. Îți arăt date demonstrative.",
-
   "nav.label": "Navigare",
   "nav.newScan": "Scanare nouă",
   "nav.dashboard": "Dashboard",
@@ -37,27 +34,21 @@
   "nav.history": "Istoric",
   "nav.ask": "Întreabă",
   "nav.recent": "Scanări recente",
-  "nav.expand": "Deschide bara laterală",
-  "nav.collapse": "Restrânge bara laterală",
   "lang.label": "Limba",
-
   "notify.changes": "Schimbări de la ultima scanare: {devices} dispozitive noi, {ports} porturi noi deschise.",
-
   "network.wifi": "Wi-Fi",
   "network.subnet": "Rețea",
   "network.gateway": "Router",
   "network.unknownName": "Rețea fără nume",
   "network.agentDownShort": "Scannerul nu e pornit",
-
   "welcome.title": "Bună! Hai să verificăm rețeaua ta.",
   "welcome.subtitle": "Ajar caută ușile lăsate deschise în Wi-Fi-ul tău și îți arată cum le închizi.",
-  "welcome.connected": "Rețeaua la care ești conectat · {subnet}",
+  "welcome.connected": "Conectat la {subnet}",
   "welcome.notDetected": "Nu văd încă rețeaua. Pornește scannerul.",
   "welcome.start": "Pornește scanarea",
   "welcome.import": "Importă un fișier",
   "welcome.what": "Ce verifică Ajar?",
   "welcome.ownOnly": "Scanează doar rețele care îți aparțin.",
-
   "scan.running.short": "Scanez acum…",
   "scan.running.title": "Verific ușile din rețeaua ta…",
   "scan.running.elapsed": "{time} trecute",
@@ -77,7 +68,6 @@
   "scan.import.or": "sau apasă ca să le alegi",
   "scan.import.busy": "Analizez fișierele…",
   "scan.import.unreadable": "Nu pot citi acest fișier. Celelalte au fost analizate.",
-
   "perm.consent.title": "Scanezi această rețea?",
   "perm.consent.body": "Ajar se uită ce dispozitive sunt conectate și ce uși au deschise. Nu încearcă parole și nu schimbă nimic.",
   "perm.consent.point1": "Durează cam 3–4 minute",
@@ -116,7 +106,6 @@
   "perm.ai.note": "Poți răspunde altfel data viitoare, din pagina Întreabă.",
   "perm.ai.cancel": "Nu acum",
   "perm.ai.accept": "Pornește asistentul",
-
   "severity.high": "Mare",
   "severity.medium": "Medie",
   "severity.low": "Mică",
@@ -125,7 +114,6 @@
   "severity.count.medium": "Medii: {count}",
   "severity.count.low": "Mici: {count}",
   "severity.count.info": "Info: {count}",
-
   "finding.points": "−{points} puncte",
   "finding.loading": "Se încarcă explicația…",
   "finding.rephrase": "Explică pentru dispozitivul meu",
@@ -133,9 +121,8 @@
   "finding.assistantOff": "Asistentul e oprit. Rămâne explicația de mai sus.",
   "finding.rephraseQuestion": "Explică pe scurt problema {code} pentru dispozitivul {device} ({ip}).",
   "finding.noPort": "fără port",
-
   "dashboard.bubble": "{device} e cel mai riscant. Începe cu el.",
-  "dashboard.context": "{ssid} · {devices} dispozitive · {date}",
+  "dashboard.context": "{devices} dispozitive în {ssid}, scanate {date}.",
   "dashboard.same": "La fel ca scanarea trecută",
   "dashboard.up": "↑ {delta} față de scanarea trecută",
   "dashboard.down": "↓ {delta} față de scanarea trecută",
@@ -145,15 +132,13 @@
   "dashboard.allGoodText": "Ajar nu a găsit nicio problemă în această scanare.",
   "dashboard.bySeverity": "Probleme după gravitate",
   "dashboard.newDevice": "Dispozitiv nou de la ultima scanare: {ip}",
-  "dashboard.newPort": "Port nou deschis: {ip} · {port} {service}",
-
+  "dashboard.newPort": "Port nou deschis: {port} {service} pe {ip}",
   "devices.title": "Dispozitive",
   "devices.count": "{count} în rețea",
   "devices.sort": "Sortează după",
   "devices.sort.danger": "Pericol",
   "devices.sort.ip": "IP",
   "devices.sort.severity": "Gravitate",
-
   "device.type.router": "Router",
   "device.type.camera": "Cameră video",
   "device.type.printer": "Imprimantă",
@@ -176,13 +161,11 @@
   "device.noFindings": "Nicio problemă la acest dispozitiv.",
   "device.technical": "Detalii tehnice despre dispozitiv",
   "device.noPorts": "Niciun port deschis.",
-
   "port.port": "Port",
   "port.protocol": "Protocol",
   "port.service": "Serviciu",
   "port.version": "Versiune",
   "port.title": "Titlu",
-
   "history.title": "Istoric",
   "history.chart": "Scorul în timp",
   "history.chartLabel": "Evoluția scorului, cu valoarea scrisă pe fiecare coloană",
@@ -215,9 +198,8 @@
   "history.deleteTitle": "Ștergi tot istoricul?",
   "history.deleteText": "Se șterg toate scanările salvate pe acest computer. Nu le mai poți recupera.",
   "history.deleteConfirm": "Șterge istoricul",
-
   "ask.title": "Întreabă-mă despre rețeaua ta",
-  "ask.about": "Despre scanarea din {date} · {ssid}",
+  "ask.about": "Despre scanarea din {date}, rețeaua {ssid}",
   "ask.s1": "Care e cel mai periculos dispozitiv?",
   "ask.s2": "Ce înseamnă MQTT?",
   "ask.s3": "E sigură camera mea?",
@@ -230,5 +212,8 @@
   "ask.off": "Asistentul e oprit. Explicațiile de bază sunt în continuare disponibile.",
   "ask.cannotAnswer": "Scanarea nu poate răspunde la asta.",
   "ask.declined": "Asistentul e oprit, la alegerea ta.",
-  "ask.turnOn": "Pornește-l"
+  "ask.turnOn": "Pornește-l",
+  "nav.hide": "Ascunde meniul",
+  "nav.show": "Arată meniul",
+  "scan.running.timing": "{time} din cam 3–4 minute"
 }

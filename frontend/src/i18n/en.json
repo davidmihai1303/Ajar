@@ -8,7 +8,6 @@
   "ajar.say.wide": "The doors are wide open! Let's close them now.",
   "ajar.say.locked": "Everything is locked. Well done!",
   "ajar.talk": "Ajar, the app's mascot. Press to hear what it says.",
-
   "score.outOf": "score {score} out of 100",
   "score.unknown": "Score unknown",
   "score.noScanYet": "No scan yet",
@@ -17,7 +16,6 @@
   "score.level.risky": "Risky",
   "score.level.unknown": "Unknown",
   "score.of100": "out of 100",
-
   "common.close": "Close",
   "common.open": "Open",
   "common.technical": "Technical details",
@@ -29,7 +27,6 @@
   "common.loading": "Loading…",
   "common.noScan": "You don't have a scan yet. Start one to see results here.",
   "common.demo": "I can't reach the Ajar server. Showing demo data.",
-
   "nav.label": "Navigation",
   "nav.newScan": "New scan",
   "nav.dashboard": "Dashboard",
@@ -37,27 +34,21 @@
   "nav.history": "History",
   "nav.ask": "Ask",
   "nav.recent": "Recent scans",
-  "nav.expand": "Expand sidebar",
-  "nav.collapse": "Collapse sidebar",
   "lang.label": "Language",
-
   "notify.changes": "Changes since the last scan: {devices} new devices, {ports} newly opened ports.",
-
   "network.wifi": "Wi-Fi",
   "network.subnet": "Network",
   "network.gateway": "Router",
   "network.unknownName": "Unnamed network",
   "network.agentDownShort": "The scanner isn't running",
-
   "welcome.title": "Hi! Let's check your network.",
   "welcome.subtitle": "Ajar looks for doors left open on your Wi-Fi and shows you how to close them.",
-  "welcome.connected": "The network you're connected to · {subnet}",
+  "welcome.connected": "Connected to {subnet}",
   "welcome.notDetected": "I can't see the network yet. Start the scanner.",
   "welcome.start": "Start scan",
   "welcome.import": "Import a file",
   "welcome.what": "What does Ajar check?",
   "welcome.ownOnly": "Only scan networks you own.",
-
   "scan.running.short": "Scanning…",
   "scan.running.title": "Checking the doors on your network…",
   "scan.running.elapsed": "{time} elapsed",
@@ -77,7 +68,6 @@
   "scan.import.or": "or press to choose them",
   "scan.import.busy": "Analysing the files…",
   "scan.import.unreadable": "I can't read this file. The others were analysed.",
-
   "perm.consent.title": "Scan this network?",
   "perm.consent.body": "Ajar looks at which devices are connected and which doors they have open. It doesn't try passwords and changes nothing.",
   "perm.consent.point1": "Takes about 3–4 minutes",
@@ -116,7 +106,6 @@
   "perm.ai.note": "You can change your mind later on the Ask page.",
   "perm.ai.cancel": "Not now",
   "perm.ai.accept": "Turn on the assistant",
-
   "severity.high": "High",
   "severity.medium": "Medium",
   "severity.low": "Low",
@@ -125,7 +114,6 @@
   "severity.count.medium": "Medium: {count}",
   "severity.count.low": "Low: {count}",
   "severity.count.info": "Info: {count}",
-
   "finding.points": "−{points} points",
   "finding.loading": "Loading the explanation…",
   "finding.rephrase": "Explain for my device",
@@ -133,9 +121,8 @@
   "finding.assistantOff": "The assistant is off. The explanation above still applies.",
   "finding.rephraseQuestion": "Briefly explain problem {code} for the device {device} ({ip}).",
   "finding.noPort": "no port",
-
   "dashboard.bubble": "The {device} is the riskiest. Start there.",
-  "dashboard.context": "{ssid} · {devices} devices · {date}",
+  "dashboard.context": "{devices} devices on {ssid}, scanned {date}.",
   "dashboard.same": "Same as the last scan",
   "dashboard.up": "↑ {delta} since the last scan",
   "dashboard.down": "↓ {delta} since the last scan",
@@ -145,15 +132,13 @@
   "dashboard.allGoodText": "Ajar found no problems in this scan.",
   "dashboard.bySeverity": "Problems by severity",
   "dashboard.newDevice": "New device since the last scan: {ip}",
-  "dashboard.newPort": "Newly opened port: {ip} · {port} {service}",
-
+  "dashboard.newPort": "Newly opened port: {port} {service} on {ip}",
   "devices.title": "Devices",
   "devices.count": "{count} on the network",
   "devices.sort": "Sort by",
   "devices.sort.danger": "Danger",
   "devices.sort.ip": "IP",
   "devices.sort.severity": "Severity",
-
   "device.type.router": "Router",
   "device.type.camera": "Video camera",
   "device.type.printer": "Printer",
@@ -176,13 +161,11 @@
   "device.noFindings": "No problems on this device.",
   "device.technical": "Technical details about the device",
   "device.noPorts": "No open ports.",
-
   "port.port": "Port",
   "port.protocol": "Protocol",
   "port.service": "Service",
   "port.version": "Version",
   "port.title": "Title",
-
   "history.title": "History",
   "history.chart": "Score over time",
   "history.chartLabel": "Score trend, with the value written on every bar",
@@ -215,9 +198,8 @@
   "history.deleteTitle": "Delete all history?",
   "history.deleteText": "This deletes all scans stored on this computer. You can't get them back.",
   "history.deleteConfirm": "Delete history",
-
   "ask.title": "Ask me about your network",
-  "ask.about": "About the scan from {date} · {ssid}",
+  "ask.about": "About the scan from {date}, network {ssid}",
   "ask.s1": "Which device is the most dangerous?",
   "ask.s2": "What does MQTT mean?",
   "ask.s3": "Is my camera safe?",
@@ -230,5 +212,8 @@
   "ask.off": "The assistant is off. The built-in explanations are still available.",
   "ask.cannotAnswer": "The scan can't answer this.",
   "ask.declined": "The assistant is off, as you chose.",
-  "ask.turnOn": "Turn it on"
+  "ask.turnOn": "Turn it on",
+  "nav.hide": "Hide menu",
+  "nav.show": "Show menu",
+  "scan.running.timing": "{time} of about 3–4 minutes"
 }

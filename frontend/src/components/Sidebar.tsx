@@ -1,5 +1,5 @@
-// Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and never moves when
-// the sidebar collapses), then "new scan", navigation, recent scans, language and collapse.
+// Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and stays put when the
+// sidebar hides), then "new scan", navigation, recent scans, language and the hide button.
 import { formatDate } from "../i18n";
 import { href, type Route } from "../router";
 import { useApp } from "../state/AppState";
@@ -18,40 +18,28 @@ export default function Sidebar({ current }: { current: Route["name"] }) {
   const active = current === "device" ? "devices" : current === "home" ? "dashboard" : current;
 
   return (
-    <aside className={`sidebar${collapsed ? " collapsed" : ""}`} aria-label={t("nav.label")}>
+    <aside id="sidebar" className={`sidebar${collapsed ? " hidden" : ""}`} aria-label={t("nav.label")} aria-hidden={collapsed}>
       <div className="sidebar-ajar-space" aria-hidden="true" />
 
-      <a className={`sidebar-new${active === "scan" ? " active" : ""}`} href={href({ name: "scan" })} aria-label={t("nav.newScan")}>
+      <a className={`sidebar-new${active === "scan" ? " active" : ""}`} href={href({ name: "scan" })}>
         <IconPlus />
-        <span className="sidebar-text">{t("nav.newScan")}</span>
+        {t("nav.newScan")}
       </a>
 
       <nav className="sidebar-nav">
         {NAV.map((item) => (
-          <a
-            key={item.key}
-            href={href(item.route)}
-            className={`sidebar-item${active === item.route.name ? " active" : ""}`}
-            aria-current={active === item.route.name ? "page" : undefined}
-            aria-label={collapsed ? t(item.key) : undefined}
-            title={collapsed ? t(item.key) : undefined}
-          >
+          <a key={item.key} href={href(item.route)} className={`sidebar-item${active === item.route.name ? " active" : ""}`} aria-current={active === item.route.name ? "page" : undefined}>
             {item.icon}
-            <span className="sidebar-text">{t(item.key)}</span>
+            {t(item.key)}
           </a>
         ))}
       </nav>
 
-      {!collapsed && history.length > 0 && (
+      {history.length > 0 && (
         <div className="sidebar-recents">
           <p className="muted sidebar-heading">{t("nav.recent")}</p>
           {history.slice(0, 5).map((item) => (
-            <a
-              key={item.id}
-              href={href({ name: "dashboard" })}
-              className={`sidebar-recent${scan?.id === item.id ? " active" : ""}`}
-              onClick={() => void selectScan(item.id)}
-            >
+            <a key={item.id} href={href({ name: "dashboard" })} className={`sidebar-recent${scan?.id === item.id ? " active" : ""}`} onClick={() => void selectScan(item.id)}>
               <span>{formatDate(item.created_at, lang)}</span>
               <span className="muted">{item.score ?? "—"}</span>
             </a>
@@ -61,17 +49,23 @@ export default function Sidebar({ current }: { current: Route["name"] }) {
 
       <div className="sidebar-footer">
         <LanguageToggle />
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => setCollapsed(!collapsed)}
-          aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
-          aria-expanded={!collapsed}
-          title={collapsed ? t("nav.expand") : t("nav.collapse")}
-        >
+        <button type="button" className="sidebar-toggle" onClick={() => setCollapsed(true)} aria-controls="sidebar" aria-expanded={!collapsed}>
           <IconSidebar />
+          {t("nav.hide")}
         </button>
       </div>
     </aside>
+  );
+}
+
+/** Shown under Ajar while the sidebar is hidden, so the menu is always one click away. */
+export function SidebarShowButton() {
+  const { t, collapsed, setCollapsed } = useApp();
+  if (!collapsed) return null;
+  return (
+    <button type="button" className="sidebar-show" onClick={() => setCollapsed(false)} aria-controls="sidebar" aria-expanded={false}>
+      <IconSidebar />
+      {t("nav.show")}
+    </button>
   );
 }

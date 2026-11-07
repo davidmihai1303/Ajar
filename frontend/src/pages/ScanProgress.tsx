@@ -20,9 +20,9 @@ export default function ScanProgress() {
           <div className="progress-indeterminate" />
         </div>
         <div className="row spread muted progress-meta">
-          <span>{network ? `${network.ssid ?? ""} · ${network.subnet}` : ""}</span>
+          <span>{network ? `${network.ssid ?? ""}, ${network.subnet}` : ""}</span>
           <span>
-            {t("scan.running.elapsed", { time: `${minutes}:${rest}` })} · {t("scan.running.estimate")}
+            {t("scan.running.timing", { time: `${minutes}:${rest}` })}
           </span>
         </div>
         <p className="muted">{t("scan.running.dontClose")}</p>

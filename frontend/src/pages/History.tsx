@@ -29,7 +29,7 @@ export default function History() {
 
   const option = (id: string) => {
     const item = history.find((entry) => entry.id === id);
-    return item ? `${formatDate(item.created_at, lang)} · ${t("history.scoreShort", { score: item.score ?? "—" })}` : "";
+    return item ? `${formatDate(item.created_at, lang)}, ${t("history.scoreShort", { score: item.score ?? "—" })}` : "";
   };
 
   return (
@@ -88,7 +88,7 @@ export default function History() {
               {history.map((item) => (
                 <tr key={item.id}>
                   <td>{formatDate(item.created_at, lang)}</td>
-                  <td>{item.source === "live" ? t("history.live") : `${t("history.imported")} · ${item.file}`}</td>
+                  <td>{item.source === "live" ? t("history.live") : `${t("history.imported")}: ${item.file}`}</td>
                   <td>{item.ssid ?? "—"}</td>
                   <td>{item.score ?? t("history.unreadable")}</td>
                   <td>

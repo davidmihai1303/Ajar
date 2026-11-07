@@ -47,7 +47,7 @@ export default function DiffList({ diff }: { diff: ScanDiff }) {
           <li key={`r-${item.ip}-${item.port}-${item.code}`}>
             <span className="diff-mark" aria-hidden="true">✓</span>
             <span className="grow">
-              {item.ip} · {titles[item.code] ?? item.code}
+              {titles[item.code] ?? item.code} ({item.ip})
             </span>
             <span className="muted">{t("history.tagResolved")}</span>
           </li>
@@ -56,7 +56,7 @@ export default function DiffList({ diff }: { diff: ScanDiff }) {
           <li key={`n-${item.ip}-${item.port}-${item.code}`}>
             <span className="diff-mark" aria-hidden="true">!</span>
             <span className="grow">
-              {item.ip} · {titles[item.code] ?? item.code}
+              {titles[item.code] ?? item.code} ({item.ip})
             </span>
             <span className="muted">{t("history.tagNew")}</span>
           </li>
@@ -72,7 +72,7 @@ export default function DiffList({ diff }: { diff: ScanDiff }) {
           <li key={`p-${port.ip}-${port.protocol}-${port.port}`}>
             <span className="diff-mark" aria-hidden="true">+</span>
             <span className="grow">
-              {port.ip} · {port.protocol}/{port.port} {port.service ?? ""}
+              {port.protocol.toUpperCase()} {port.port} {port.service ?? ""} ({port.ip})
             </span>
             <span className="muted">{t("history.tagPort")}</span>
           </li>

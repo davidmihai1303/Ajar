@@ -34,7 +34,7 @@ export default function DeviceDetail({ ip }: { ip: string }) {
         <div className="grow">
           <h1 className="serif h1">{name}</h1>
           <p className="muted">
-            {[device.vendor, device.hostname, t("device.findings", { count: findings.length })].filter(Boolean).join(" · ")}
+            {[device.vendor, device.hostname, t("device.findings", { count: findings.length })].filter(Boolean).join(", ")}
           </p>
         </div>
         {worst ? <SeverityBadge severity={worst} /> : <span className="chip sev-ok">✓ {t("device.ok")}</span>}

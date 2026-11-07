@@ -81,7 +81,7 @@ export default function Dashboard() {
             <div className="grow">
               <h2 className="h2">{deviceName(first.device.device_type)}</h2>
               <p className="muted">
-                {first.device.vendor ?? first.device.hostname ?? first.device.ip} · {t("finding.points", { points: first.points })}
+                {first.device.vendor ?? first.device.hostname ?? first.device.ip}, {t("finding.points", { points: first.points })}
               </p>
             </div>
             <SeverityBadge severity={finding.severity} />
