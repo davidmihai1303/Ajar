@@ -1,7 +1,7 @@
 """History package: local SQLite persistence and scan diffing."""
 from netcheck.history.diff import ScanDiff, compute_diff
+from netcheck.history.records import ScanRecord
 from netcheck.history.store import (
-    ScanRecord,
     delete_all_history,
     delete_scan,
     get_device_history,

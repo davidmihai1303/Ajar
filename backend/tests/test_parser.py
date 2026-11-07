@@ -6,16 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
-def test_parser_requires_defusedxml():
-    result = subprocess.run(
-        [sys.executable, "-S", "-c",
-         "import sys; sys.modules['defusedxml'] = None; import netcheck.analysis.parser"],
-        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
-    )
-    assert result.returncode != 0
-    assert "defusedxml" in result.stderr
-
 from netcheck.analysis.models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                                       Device, ScanResult)
 from netcheck.analysis.parser import clean_text, parse_bytes, parse_scan
@@ -248,6 +238,16 @@ def test_ipv6_interface_label_does_not_expose_a_mac():
 
 
 # ------------------------------------------------------------ hostile input (NFR-03)
+
+def test_parser_requires_defusedxml():
+    result = subprocess.run(
+        [sys.executable, "-S", "-c",
+         "import sys; sys.modules['defusedxml'] = None; import netcheck.analysis.parser"],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "defusedxml" in result.stderr
+
 
 def test_xxe_external_entity_is_refused(tmp_path):
     secret = tmp_path / "secret.txt"

@@ -6,51 +6,21 @@ masks MAC addresses in all stored outputs.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import sqlite3
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Generator, Optional
+from typing import Generator, Optional
+from uuid import uuid4
 
 from netcheck.analysis.models import Device, Finding, Port, ScanResult
-from netcheck.analysis.privacy import mask_mac
+from netcheck.analysis.privacy import mask_mac, mask_macs_in_text, mask_scan_filename
 from netcheck.config import DB_PATH
 
-
-@dataclass
-class ScanRecord:
-    """Wrapper around ScanResult retrieved from the SQLite history database."""
-
-    scan: ScanResult
-    findings: list[Finding] = field(default_factory=list)
-    score: Optional[int] = None
-    created_at: str = ""
-    scan_id: str = ""
-
-    @property
-    def file(self) -> str:
-        return self.scan.file
-
-    @property
-    def file_name(self) -> str:
-        return self.scan.file
-
-    @property
-    def timestamp(self) -> str:
-        return self.created_at
-
-    @property
-    def devices(self) -> tuple[Device, ...]:
-        return self.scan.devices
-
-    @property
-    def error(self) -> Optional[str]:
-        return self.scan.error
-
-    @property
-    def ok(self) -> bool:
-        return self.scan.ok
+from .diff import ScanDiff, compute_diff
+from .records import ScanRecord, analysis_for
+from .schema import ensure_schema
 
 
 @contextlib.contextmanager
@@ -70,98 +40,45 @@ def _get_connection(db_path: str = DB_PATH) -> Generator[sqlite3.Connection, Non
 
 
 def init_db(db_path: str = DB_PATH) -> None:
-    """Initialize SQLite schema if it does not exist."""
+    """Initialize or migrate the local database before opening a read or write transaction."""
     with _get_connection(db_path) as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS scans (
-                scan_id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                file_name TEXT,
-                score INTEGER,
-                error TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scan_id TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
-                ip TEXT NOT NULL,
-                mac TEXT,
-                vendor TEXT,
-                hostname TEXT,
-                device_type TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS ports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scan_id TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
-                ip TEXT NOT NULL,
-                port_number INTEGER NOT NULL,
-                protocol TEXT NOT NULL,
-                state TEXT NOT NULL,
-                service_name TEXT,
-                product TEXT,
-                version TEXT,
-                tunnel TEXT,
-                title TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS findings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scan_id TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
-                ip TEXT NOT NULL,
-                port_number INTEGER,
-                finding_code TEXT NOT NULL,
-                severity TEXT NOT NULL,
-                points INTEGER NOT NULL,
-                evidence TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_devices_scan_id ON devices(scan_id);
-            CREATE INDEX IF NOT EXISTS idx_ports_scan_id ON ports(scan_id);
-            CREATE INDEX IF NOT EXISTS idx_findings_scan_id ON findings(scan_id);
-        """)
+        ensure_schema(conn)
 
 
 def save_scan(
-    scan: Any,
-    findings: Sequence[Finding] = (),
+    scan: ScanResult | ScanRecord,
+    findings: Sequence[Finding] | None = None,
     score: Optional[int] = None,
     scan_id: Optional[str] = None,
     db_path: str = DB_PATH,
 ) -> str:
-    """Save a ScanResult / ScanRecord into the SQLite database. Returns scan_id."""
+    """Append a scan, or update the record identified by an explicit public ID."""
+    record = scan if isinstance(scan, ScanRecord) else ScanRecord(scan)
+    sid = scan_id or record.scan_id or uuid4().hex
+    if mask_macs_in_text(sid) != sid:
+        raise ValueError("Scan ID must not contain a MAC address; omit it to generate an ID")
+
+    fname = mask_scan_filename(record.file)
+    started = record.scan.started
+    scan_time = None
+    if started is not None:
+        try:
+            scan_time = datetime.fromtimestamp(started, tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            started = None
+    created_at = record.created_at or (scan_time or datetime.now(timezone.utc)).isoformat()
+    all_findings, final_score = analysis_for(scan, findings, score) if scan.ok else ((), None)
     init_db(db_path)
-
-    sid = (
-        scan_id
-        or getattr(scan, "scan_id", None)
-        or getattr(scan, "file", None)
-        or getattr(scan, "file_name", None)
-        or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    )
-    fname = getattr(scan, "file", getattr(scan, "file_name", sid))
-    created_at = (
-        getattr(scan, "timestamp", None)
-        or getattr(scan, "created_at", None)
-        or (
-            datetime.fromtimestamp(scan.started, tz=timezone.utc).isoformat()
-            if getattr(scan, "started", None) is not None
-            else None
-        )
-        or datetime.now(timezone.utc).isoformat()
-    )
-    final_score = score if score is not None else getattr(scan, "score", None)
-    err = getattr(scan, "error", None)
-
-    all_findings = list(findings) if findings else list(getattr(scan, "findings", ()))
-
     with _get_connection(db_path) as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO scans (scan_id, created_at, file_name, score, error)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO scans (scan_id, created_at, file_name, score, error, started)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scan_id) DO UPDATE SET created_at = excluded.created_at,
+                file_name = excluded.file_name, score = excluded.score, error = excluded.error,
+                started = excluded.started
             """,
-            (sid, created_at, fname, final_score, err),
+            (sid, created_at, fname, final_score, record.error, started),
         )
 
         # Delete existing child rows if updating/replacing
@@ -169,49 +86,34 @@ def save_scan(
         conn.execute("DELETE FROM ports WHERE scan_id = ?", (sid,))
         conn.execute("DELETE FROM findings WHERE scan_id = ?", (sid,))
 
-        for d in getattr(scan, "devices", ()):
-            raw_mac = getattr(d, "mac_masked", getattr(d, "mac", ""))
-            if ":xx:xx:xx" in raw_mac.lower() or ":**:**:**" in raw_mac:
-                masked_mac_val = raw_mac
-            else:
-                masked_mac_val = mask_mac(raw_mac)
-            conn.execute(
+        for device in record.devices:
+            mac = mask_mac(device.mac_masked) or mask_macs_in_text(device.mac_masked)
+            cursor = conn.execute(
                 """
                 INSERT INTO devices (scan_id, ip, mac, vendor, hostname, device_type)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (sid, d.ip, masked_mac_val, d.vendor, d.hostname, d.device_type),
+                (sid, device.ip, mac, device.vendor, device.hostname, device.device_type),
             )
-            for p in getattr(d, "ports", ()):
-                svc = getattr(p, "service", getattr(p, "service_name", ""))
-                title = getattr(p, "http_title", getattr(p, "title", ""))
+            for port in device.ports:
                 conn.execute(
                     """
-                    INSERT INTO ports (scan_id, ip, port_number, protocol, state,
-                                       service_name, product, version, tunnel, title)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO ports (device_id, scan_id, ip, port_number, protocol, state,
+                                       service_name, product, version, tunnel, title, extrainfo, scripts)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        sid,
-                        d.ip,
-                        p.port,
-                        p.protocol,
-                        p.state,
-                        svc,
-                        p.product,
-                        p.version,
-                        p.tunnel,
-                        title,
-                    ),
+                    (cursor.lastrowid, sid, device.ip, port.port, port.protocol, port.state,
+                     port.service, port.product, port.version, port.tunnel, port.http_title,
+                     port.extrainfo, json.dumps(port.scripts)),
                 )
 
         for f in all_findings:
             conn.execute(
                 """
-                INSERT INTO findings (scan_id, ip, port_number, finding_code, severity, points, evidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO findings (scan_id, ip, port_number, finding_code, severity, points, evidence, protocol)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (sid, f.ip, f.port, f.code, f.severity, f.points, f.evidence),
+                (sid, f.ip, f.port, f.code, f.severity, f.points, f.evidence, f.protocol),
             )
 
     return sid
@@ -221,96 +123,103 @@ def get_scan(scan_id: str, db_path: str = DB_PATH) -> Optional[ScanRecord]:
     """Retrieve a complete ScanRecord by scan_id."""
     init_db(db_path)
     with _get_connection(db_path) as conn:
-        scan_row = conn.execute(
-            "SELECT scan_id, created_at, file_name, score, error FROM scans WHERE scan_id = ?",
-            (scan_id,),
-        ).fetchone()
+        conn.execute("BEGIN")
+        return _read_scan(conn, scan_id)
 
-        if not scan_row:
-            return None
 
-        # Fetch devices
-        dev_rows = conn.execute(
-            "SELECT ip, mac, vendor, hostname, device_type FROM devices WHERE scan_id = ? ORDER BY ip",
-            (scan_id,),
-        ).fetchall()
+def _read_scan(conn: sqlite3.Connection, scan_id: str) -> Optional[ScanRecord]:
+    scan_row = conn.execute(
+        "SELECT scan_id, created_at, file_name, score, error, started FROM scans WHERE scan_id = ?",
+        (scan_id,),
+    ).fetchone()
 
-        # Fetch ports
-        port_rows = conn.execute(
-            """
-            SELECT ip, port_number, protocol, state, service_name, product, version, tunnel, title
-            FROM ports WHERE scan_id = ? ORDER BY port_number
-            """,
-            (scan_id,),
-        ).fetchall()
+    if not scan_row:
+        return None
 
-        ports_by_ip: dict[str, list[Port]] = {}
-        for pr in port_rows:
-            scripts = {}
-            if pr["title"]:
-                scripts["http-title"] = pr["title"]
-            p = Port(
-                protocol=pr["protocol"],
-                port=pr["port_number"],
-                state=pr["state"],
-                service=pr["service_name"] or "",
-                product=pr["product"] or "",
-                version=pr["version"] or "",
-                tunnel=pr["tunnel"] or "",
-                scripts=scripts,
+    # Fetch devices
+    dev_rows = conn.execute(
+        "SELECT id, ip, mac, vendor, hostname, device_type FROM devices WHERE scan_id = ? ORDER BY id",
+        (scan_id,),
+    ).fetchall()
+
+    # Fetch ports
+    port_rows = conn.execute(
+        """
+        SELECT device_id, port_number, protocol, state, service_name, product, version, tunnel, title, extrainfo, scripts
+        FROM ports WHERE scan_id = ? ORDER BY id
+        """,
+        (scan_id,),
+    ).fetchall()
+
+    ports_by_device: dict[int, list[Port]] = {}
+    for pr in port_rows:
+        scripts = json.loads(pr["scripts"]) if pr["scripts"] is not None else {}
+        if pr["scripts"] is None and pr["title"]:
+            scripts["http-title"] = pr["title"]
+        p = Port(
+            protocol=pr["protocol"],
+            port=pr["port_number"],
+            state=pr["state"],
+            service=pr["service_name"] or "",
+            product=pr["product"] or "",
+            version=pr["version"] or "",
+            tunnel=pr["tunnel"] or "",
+            extrainfo=pr["extrainfo"] or "",
+            scripts=scripts,
+        )
+        ports_by_device.setdefault(pr["device_id"], []).append(p)
+
+    devices: list[Device] = []
+    for dr in dev_rows:
+        ip = dr["ip"]
+        devices.append(
+            Device(
+                ip=ip,
+                mac_masked=dr["mac"] or "",
+                vendor=dr["vendor"] or "",
+                hostname=dr["hostname"] or "",
+                device_type=dr["device_type"] or "unknown",
+                ports=tuple(ports_by_device.get(dr["id"], [])),
             )
-            ports_by_ip.setdefault(pr["ip"], []).append(p)
-
-        devices: list[Device] = []
-        for dr in dev_rows:
-            ip = dr["ip"]
-            devices.append(
-                Device(
-                    ip=ip,
-                    mac_masked=dr["mac"] or "",
-                    vendor=dr["vendor"] or "",
-                    hostname=dr["hostname"] or "",
-                    device_type=dr["device_type"] or "unknown",
-                    ports=tuple(ports_by_ip.get(ip, [])),
-                )
-            )
-
-        # Fetch findings
-        finding_rows = conn.execute(
-            """
-            SELECT ip, port_number, finding_code, severity, points, evidence
-            FROM findings WHERE scan_id = ? ORDER BY id
-            """,
-            (scan_id,),
-        ).fetchall()
-
-        findings: list[Finding] = []
-        for fr in finding_rows:
-            findings.append(
-                Finding(
-                    code=fr["finding_code"],
-                    severity=fr["severity"],
-                    points=fr["points"],
-                    ip=fr["ip"],
-                    port=fr["port_number"],
-                    protocol="tcp",
-                    evidence=fr["evidence"] or "",
-                )
-            )
-
-        scan_result = ScanResult(
-            file=scan_row["file_name"] or scan_row["scan_id"],
-            devices=tuple(devices),
-            error=scan_row["error"],
         )
 
-        return ScanRecord(
-            scan=scan_result,
-            findings=findings,
-            score=scan_row["score"],
-            created_at=scan_row["created_at"],
-            scan_id=scan_row["scan_id"],
+    # Fetch findings
+    finding_rows = conn.execute(
+        """
+        SELECT ip, port_number, finding_code, severity, points, evidence, protocol
+        FROM findings WHERE scan_id = ? ORDER BY id
+        """,
+        (scan_id,),
+    ).fetchall()
+
+    findings: list[Finding] = []
+    for fr in finding_rows:
+        findings.append(
+            Finding(
+                code=fr["finding_code"],
+                severity=fr["severity"],
+                points=fr["points"],
+                ip=fr["ip"],
+                port=fr["port_number"],
+                protocol=fr["protocol"] or "",
+                evidence=fr["evidence"] or "",
+            )
         )
+
+    scan_result = ScanResult(
+        file=scan_row["file_name"] or scan_row["scan_id"],
+        devices=tuple(devices),
+        error=scan_row["error"],
+        started=scan_row["started"],
+    )
+
+    return ScanRecord(
+        scan=scan_result,
+        findings=findings,
+        score=scan_row["score"],
+        created_at=scan_row["created_at"],
+        scan_id=scan_row["scan_id"],
+    )
 
 
 def list_scans(db_path: str = DB_PATH) -> list[dict]:
@@ -319,7 +228,7 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
     with _get_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT 
+            SELECT
                 s.scan_id,
                 s.created_at,
                 s.file_name,
@@ -331,7 +240,7 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
             LEFT JOIN devices d ON s.scan_id = d.scan_id
             LEFT JOIN findings f ON s.scan_id = f.scan_id
             GROUP BY s.scan_id
-            ORDER BY s.created_at DESC
+            ORDER BY s.created_at DESC, s.rowid DESC
             """
         ).fetchall()
 
@@ -351,10 +260,11 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
 
 def get_latest_scan(db_path: str = DB_PATH) -> Optional[ScanRecord]:
     """Retrieve the most recent ScanRecord, or None if history is empty."""
-    scans = list_scans(db_path)
-    if not scans:
-        return None
-    return get_scan(scans[0]["scan_id"], db_path)
+    init_db(db_path)
+    with _get_connection(db_path) as conn:
+        conn.execute("BEGIN")
+        latest = conn.execute("SELECT scan_id FROM scans ORDER BY created_at DESC, rowid DESC LIMIT 1").fetchone()
+        return _read_scan(conn, latest["scan_id"]) if latest else None
 
 
 def delete_scan(scan_id: str, db_path: str = DB_PATH) -> bool:
@@ -389,8 +299,8 @@ def get_score_trend(db_path: str = DB_PATH) -> list[dict]:
             """
             SELECT scan_id, created_at, file_name, score
             FROM scans
-            WHERE score IS NOT NULL
-            ORDER BY created_at ASC
+            WHERE error IS NULL AND score IS NOT NULL
+            ORDER BY created_at ASC, rowid ASC
             """
         ).fetchall()
         return [
@@ -414,7 +324,7 @@ def get_device_history(ip: str, db_path: str = DB_PATH) -> list[dict]:
             FROM devices d
             JOIN scans s ON d.scan_id = s.scan_id
             WHERE d.ip = ?
-            ORDER BY s.created_at DESC
+            ORDER BY s.created_at DESC, s.rowid DESC
             """,
             (ip,),
         ).fetchall()
@@ -432,36 +342,23 @@ def get_device_history(ip: str, db_path: str = DB_PATH) -> list[dict]:
         ]
 
 
-def get_scan_diff_with_previous(scan_id: str, db_path: str = DB_PATH):
+def get_scan_diff_with_previous(scan_id: str, db_path: str = DB_PATH) -> ScanDiff | None:
     """Compute difference between scan_id and the chronologically preceding scan (FR-10, FR-13)."""
-    from netcheck.history.diff import compute_diff
-
     init_db(db_path)
     with _get_connection(db_path) as conn:
-        curr_row = conn.execute(
-            "SELECT scan_id, created_at FROM scans WHERE scan_id = ?",
+        conn.execute("BEGIN")
+        curr = _read_scan(conn, scan_id)
+        if curr is None or not curr.ok:
+            return None
+        previous = conn.execute(
+            """
+            SELECT p.scan_id FROM scans p JOIN scans c ON c.scan_id = ?
+            WHERE p.error IS NULL AND (p.created_at, p.rowid) < (c.created_at, c.rowid)
+            ORDER BY p.created_at DESC, p.rowid DESC LIMIT 1
+            """,
             (scan_id,),
         ).fetchone()
-        if not curr_row:
+        if previous is None:
             return None
-
-        # Find the immediately preceding scan
-        prev_row = conn.execute(
-            """
-            SELECT scan_id FROM scans
-            WHERE created_at < ? AND scan_id != ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (curr_row["created_at"], scan_id),
-        ).fetchone()
-
-        if not prev_row:
-            return None
-
-    prev_scan = get_scan(prev_row["scan_id"], db_path)
-    curr_scan = get_scan(scan_id, db_path)
-    if not prev_scan or not curr_scan:
-        return None
-
-    return compute_diff(prev_scan, curr_scan)
+        prev = _read_scan(conn, previous["scan_id"])
+    return compute_diff(prev, curr) if prev is not None else None
