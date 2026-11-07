@@ -108,6 +108,39 @@ def test_round_trip_preserves_all_scan_and_finding_fields(tmp_path):
     assert get_scan(save_scan(scan, db_path=db), db).scan == scan
 
 
+@pytest.mark.parametrize("old_version", [1, 2, 3])
+def test_upgrade_recovers_a_score_only_legacy_scan_in_a_mixed_database(tmp_path, old_version):
+    db = tmp_path / "history.sqlite"
+    scan, expected, score = analyze_file(FIXTURES / "V6a_before.xml")
+    for sid, saved_score in (("match", score), ("conflict", 85), ("explicit", score)):
+        save_scan(scan, findings=[], score=saved_score, scan_id=sid, db_path=db)
+    save_scan(replace(scan, devices=(), started=None), findings=[], score=85, scan_id="header", db_path=db)
+    save_scan(scan, findings=expected, score=85, scan_id="has-ledger", db_path=db)
+    with sqlite3.connect(db) as conn:
+        # Original-schema rows retained only the title. Later writers saved JSON for every port.
+        conn.execute("UPDATE ports SET scripts = NULL WHERE scan_id IN ('match', 'conflict', 'has-ledger')")
+        conn.execute("UPDATE scans SET started = NULL WHERE scan_id != 'explicit'")
+        if old_version < 3:
+            conn.execute("ALTER TABLE scans DROP COLUMN findings_available")
+        conn.execute(f"PRAGMA user_version = {old_version}")
+    store.init_db(db)
+    store.init_db(db)
+    restored = get_scan("match", db)
+    assert restored.findings_available and (restored.score, restored.findings) == (score, expected)
+    identical = compute_diff(restored, scan)
+    assert identical.retained_findings == expected
+    assert (identical.score_change, identical.new_findings, identical.resolved_findings) == (0, [], [])
+    for sid in ("conflict", "header"):
+        unavailable = get_scan(sid, db)
+        assert (unavailable.score, unavailable.findings_available, unavailable.findings) == (85, False, [])
+        diff = compute_diff(unavailable, scan)
+        assert not diff.new_findings and not diff.resolved_findings
+    explicit = get_scan("explicit", db)
+    assert (explicit.score, explicit.findings_available, explicit.findings) == (score, True, [])
+    known = get_scan("has-ledger", db)
+    assert (known.score, known.findings) == (85, expected)
+
+
 @pytest.mark.parametrize("upgrade", [False, True], ids=["new-records", "existing-database"])
 def test_history_orders_equivalent_and_mixed_offsets_by_instant(tmp_path, upgrade):
     db = tmp_path / "history.sqlite"
@@ -241,7 +274,11 @@ def test_original_database_migrates_private_keys_and_keeps_known_evidence(tmp_pa
                      (private_id,))
         conn.execute("INSERT INTO findings VALUES (1, ?, '192.0.2.5', 1900, 'UPNP_EXPOSED', 'medium', 10, '')",
                      (private_id,))
-        conn.execute("INSERT INTO scans VALUES (?, '2026-10-31T00:00:00+00:00', 'old.xml', 100, NULL)", (public_id,))
+        # Earlier scan of the same device: the original writer accepted its score alone.
+        conn.execute("INSERT INTO scans VALUES (?, '2026-10-31T00:00:00+00:00', 'old.xml', 90, NULL)", (public_id,))
+        conn.execute("INSERT INTO devices VALUES (2, ?, '192.0.2.5', '', 'RouterCo', '', 'router')", (public_id,))
+        conn.execute("INSERT INTO ports VALUES (2, ?, '192.0.2.5', 1900, 'udp', 'open', 'upnp', '', '', '', '')",
+                     (public_id,))
     store.init_db(db)
     store.init_db(db)
     summary, original = list_scans(db)
@@ -250,7 +287,9 @@ def test_original_database_migrates_private_keys_and_keeps_known_evidence(tmp_pa
     assert summary["file_name"] == "capture-D8:43:AE:xx:xx:xx.xml"
     record = get_scan(summary["scan_id"], db)
     assert record.score == 90 and record.scan.started is None
-    assert [entry["score"] for entry in get_score_trend(db)] == [100, 90]
+    assert [entry["score"] for entry in get_score_trend(db)] == [90, 90]
+    diff = get_scan_diff_with_previous(record.scan_id, db)
+    assert (diff.new_findings, diff.resolved_findings, diff.retained_findings) == ([], [], record.findings)
     assert record.findings[0].protocol == "udp"
     assert record.devices[0].ports[0].port == 1900
     with sqlite3.connect(db) as conn:

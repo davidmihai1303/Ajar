@@ -10,6 +10,7 @@ from .records import public_scan_id, scan_start_time, utc_timestamp
 from .rows import read_scan, write_findings
 
 
+_SCHEMA_VERSION = 4
 _CREATE = (
     """CREATE TABLE IF NOT EXISTS scans (
         scan_id TEXT PRIMARY KEY,
@@ -113,9 +114,22 @@ def _normalize_timestamps(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE scans SET created_at = ? WHERE scan_id = ?", (value, sid))
 
 
-def _recover_missing_analysis(conn: sqlite3.Connection) -> None:
-    conn.execute("ALTER TABLE scans ADD COLUMN findings_available INTEGER NOT NULL DEFAULT 1")
-    missing = conn.execute("SELECT scan_id FROM scans WHERE error IS NULL AND score IS NULL").fetchall()
+def _recover_missing_analysis(conn: sqlite3.Connection, original_schema: bool) -> None:
+    # After a previous upgrade, NULL port scripts identify original-writer rows. A portless
+    # row with no stored start is ambiguous, but an empty ledger cannot explain a score below 100.
+    missing = conn.execute("""
+        SELECT s.scan_id FROM scans s
+        WHERE s.error IS NULL AND s.findings_available = 1 AND (
+            s.score IS NULL OR (
+                NOT EXISTS (SELECT 1 FROM findings f WHERE f.scan_id = s.scan_id)
+                AND (
+                    ? OR EXISTS (SELECT 1 FROM ports p WHERE p.scan_id = s.scan_id AND p.scripts IS NULL)
+                    OR (s.started IS NULL AND s.score != 100
+                        AND NOT EXISTS (SELECT 1 FROM ports p WHERE p.scan_id = s.scan_id))
+                )
+            )
+        )
+    """, (original_schema,)).fetchall()
     for (sid,) in missing:
         record = read_scan(conn, sid)
         assert record is not None  # Selected in the same migration transaction.
@@ -127,21 +141,22 @@ def _recover_missing_analysis(conn: sqlite3.Connection) -> None:
                 findings = evaluate_devices(record.devices) if record.devices else None
             except ValueError:
                 findings = None
-            if findings is None:
+            if findings is None or (record.score is not None and compute_score(findings) != record.score):
                 conn.execute("UPDATE scans SET findings_available = 0 WHERE scan_id = ?", (sid,))
                 continue
             write_findings(conn, sid, findings)
-        conn.execute("UPDATE scans SET score = ? WHERE scan_id = ?", (compute_score(findings), sid))
+        if record.score is None:
+            conn.execute("UPDATE scans SET score = ? WHERE scan_id = ?", (compute_score(findings), sid))
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    if conn.execute("PRAGMA user_version").fetchone()[0] == 3:
+    if conn.execute("PRAGMA user_version").fetchone()[0] == _SCHEMA_VERSION:
         return
     conn.execute("BEGIN IMMEDIATE")
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version == 3:  # Another initializer finished while we were waiting.
+    if version == _SCHEMA_VERSION:  # Another initializer finished while we were waiting.
         return
-    if version not in (0, 1, 2):
+    if version not in (0, 1, 2, 3):
         raise ValueError(f"Unsupported history database version {version}")
     if version == 0:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scans'").fetchone():
@@ -151,5 +166,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(statement)
     if version < 2:
         _normalize_timestamps(conn)
-    _recover_missing_analysis(conn)
-    conn.execute("PRAGMA user_version = 3")
+    if version < 3:
+        conn.execute("ALTER TABLE scans ADD COLUMN findings_available INTEGER NOT NULL DEFAULT 1")
+    _recover_missing_analysis(conn, original_schema=version == 0)
+    conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
