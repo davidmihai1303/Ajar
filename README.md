@@ -100,8 +100,8 @@ the jury uses for the Validation and Test Sets.
    and services, so a rule can be corrected by changing one line.
 6. **Texts live in YAML.** `explain/texts/ro.yaml` and `en.yaml` can be written and reviewed without
    touching code.
-7. **The LLM never decides anything.** It only rephrases and answers questions from the scan's
-   evidence. If it is unavailable, the built-in texts are used.
+7. **The scan determines the facts.** The model selects evidence for the answer. Python renders
+   those records and provides the built-in fallback when the model is unavailable.
 
 ### Two ways in
 
@@ -138,7 +138,7 @@ Smarthack/
 │   │   ├── history/             SQLite store, diff
 │   │   ├── explain/             static texts (YAML) + optional LLM
 │   │   ├── api/                 FastAPI routes + agent client
-│   │   ├── cli.py               `netcheck analyze <folder>`
+│   │   ├── cli.py               `netcheck analyze <folder|file>`, `netcheck analyze-file <file>`
 │   │   └── config.py            environment variables only
 │   └── tests/
 │       └── fixtures/            Validation Set + our lab scans
@@ -193,6 +193,7 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_BASE_URL` | empty | OpenAI-compatible endpoint, e.g. `http://127.0.0.1:8080/v1`. Empty = built-in texts only |
 | `LLM_API_KEY` | empty | only if the endpoint needs one; never committed |
 | `LLM_MODEL` | empty | model name sent to the endpoint |
+| `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
 
@@ -202,6 +203,10 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 docker compose up -d --build            # app → http://127.0.0.1:8001
 python3 scanner/agent.py serve          # scanner agent (normal user, separate terminal)
 ```
+
+**Build the image before the event.** The build downloads base images, Python and npm packages.
+At the venue the scanner laptop is only on the hotspot (no venue Wi-Fi, limited mobile data), so
+run `docker compose build` at home, then check that `netcheck analyze` works with the network off.
 
 ---
 
@@ -216,6 +221,27 @@ docker compose run --rm app netcheck analyze /data/input/test_set --out /data/in
 ```
 
 An unreadable file gets `ERROR` in `scores.csv`, and the other files are still processed.
+The CSVs and terminal summary preserve timestamp filenames and mask MAC addresses.
+If masking gives two scans the same filename, the exporter adds a number before the extension.
+Single-file reruns use the same label as the folder export.
+
+A single-file CSV rerun requires an explicit `--out`. Choose a separate directory to keep the
+full folder results. For a read-only rerun, use `netcheck analyze-file`.
+
+Without Docker (e.g. as a fallback for the live checks):
+
+```bash
+cd backend && pip install -e ".[test]"
+netcheck analyze ../input/test_set --out ../input/test_set/results   # whole folder → both CSVs
+netcheck analyze ../input/test_set/T3.xml --out /tmp/rerun           # live check #1: one file → its rows
+netcheck analyze-file ../input/test_set/T3.xml                       # readable findings + score (RO / EN)
+```
+
+The output filesystem must support symbolic links. Both CSV names point into the local
+`.netcheck-csv` directory so one switch publishes the complete pair. A successful export removes
+the previous CSVs. If the process is killed, rerun the export before sharing the folder to clear
+any interrupted work. To move standalone CSVs
+to another drive, copy their contents (for example, `cp -L findings.csv scores.csv /path/to/destination/`).
 
 ### Live scan
 
@@ -272,14 +298,16 @@ byte-for-byte reproducible.
 - **Built-in texts** (`backend/netcheck/explain/texts/*.yaml`): one explanation of at most two sentences
   and 1–5 fix steps per code, in Romanian and English, at roughly a 12-year-old reading level.
   Context variants exist where the code alone would mislead. For example, `rtsp` on a Mac is AirPlay, not a camera.
-- **Optional LLM**: the existing **llama-server** on the MSI (`127.0.0.1:8080`, OpenAI-compatible,
-  see `SmartHack_Setup.md`). It receives **only** the findings of the current scan and may:
-  - rephrase an explanation for the specific device,
-  - answer a question such as "is it safe that my printer has port 9100 open?",
-  - say so when the scan cannot answer the question.
-
-  It never invents ports, CVEs or phone numbers, and never changes findings or scores (NFR-06).
-  If it is off or slow, the built-in texts are shown.
+- The optional llama-server on the MSI selects relevant scan records. Python renders each selected
+  device, endpoint, finding and score in the requested language. Device-specific explanations use a
+  verified label with the original explanation and ordered fixes.
+- An IP outside the current scan gets a local reply before the model is called. For in-scope
+  questions, the model can select only IDs offered for that question. Unrecognised IDs, malformed
+  replies and free-form claims fall back to built-in text. A question can still be ambiguous, so
+  each returned statement identifies its device or endpoint. Simple score questions read the scan score directly.
+- Model requests go directly to a numeric loopback address. The client normalises `localhost`
+  to `127.0.0.1` and disables environment proxies and redirects.
+- **Try it against the real model:** `docker compose run --rm app python -m netcheck.explain.smoke`
 
 ---
 
@@ -304,14 +332,16 @@ byte-for-byte reproducible.
 | **NFR-04 Least privilege** | Only `netcheck-nmap` runs as root, and only during a scan. The agent, the API and the UI run as normal users; the container runs as a non-root user |
 | **NFR-05 Determinism** | Findings and scores come from code only; dedicated test runs each file three times |
 | **NFR-06 Grounded AI** | The LLM only sees scan evidence and never produces findings or scores |
-| **Scope guardrail** | Explicit confirmation, connected subnet only, public and reserved ranges refused, VPN and Docker interfaces ignored, checked twice (agent + root wrapper) |
+| **Scope guardrail** | Explicit confirmation, connected subnet only, public and reserved ranges refused, VPN and Docker interfaces ignored, refused when the laptop is on more than one network (e.g. hotspot + venue cable), checked twice (agent + root wrapper) |
+| **Local agent API** | Accepts only the app's own server-side client (Host `127.0.0.1`, no browser `Origin`, JSON only), so a web page cannot start a scan |
 
 ---
 
 ## 11. Testing
 
 ```bash
-docker compose run --rm app pytest -q
+docker compose run --rm app pytest -q              # backend
+python3 -m unittest discover -s scanner/tests      # scanner (stdlib only, never scans)
 ```
 
 | Test | Checks |
@@ -322,6 +352,8 @@ docker compose run --rm app pytest -q
 | `test_history.py` | V6a → V6b shows 3 resolved findings although MACs changed |
 | `test_lab.py` | Our lab: before → 0, after → 75 |
 | `test_determinism.py` | Same file three times → identical output |
+| `test_llm.py` | Grounding check, fallbacks, prompt injection, privacy, determinism of the LLM layer |
+| `scanner/tests/test_scanner.py` | Guard refusals (public IP, venue subnet, no `--confirm`), two networks refused, root wrapper rule, agent rejects browser / wrong-Host requests |
 
 ---
 
@@ -388,8 +420,8 @@ Details: [`lab/README.md`](lab/README.md).
 |---|---|
 | Hotspot lab + before/after scans | done |
 | Scanner: detection, guard, root wrapper, agent, installer | done |
-| Analysis (parser, rules, score, CSV) | scaffold, next |
+| Analysis (parser, rules, score, CSV) | done: Validation Set 24/24 rows, 8/8 scores, CSVs byte-identical to the official answers |
 | Explanations RO/EN | scaffold |
 | History + diff | scaffold |
 | API + frontend | scaffold |
-| Optional LLM | scaffold |
+| Optional LLM (grounded personalisation + Q&A) | done, API wiring pending |

@@ -1,0 +1,11 @@
+# Always LF in the repository AND in every checkout (also on Windows with core.autocrlf=true).
+# Shell scripts and the root wrapper break with CRLF ("python3\r: No such file or directory").
+* text=auto eol=lf
+
+# Official Validation / Test Set files and our lab scans: never convert, keep them byte-identical
+# to what the organisers and nmap produced.
+backend/tests/fixtures/** -text
+
+*.png binary
+*.jpg binary
+*.ico binary

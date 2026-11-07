@@ -21,7 +21,7 @@ with a secret answer key. Extra findings cost as much as missing ones. Correctne
 | `scanner/netcheck-nmap` | **root** via sudo | Self-contained: must **never** import from the repo. One argument (CIDR). Fixed nmap command. |
 | `backend/netcheck/analysis/` | Docker | Pure and deterministic. Must **not** import `history`, `api`, `explain`, network code or any LLM. No I/O except reading the XML file. |
 | `backend/netcheck/history/` | Docker | Local SQLite only. Compare scans **by IP, never by MAC**. |
-| `backend/netcheck/explain/` | Docker | Static YAML texts always work. `llm.py` is optional and only rephrases. |
+| `backend/netcheck/explain/` | Docker | Static YAML texts always work. `llm.py` is optional and selects verified evidence. |
 | `backend/netcheck/api/` | Docker | Never runs nmap; calls the host agent at `NETCHECK_AGENT_URL`. Binds to 127.0.0.1. |
 | `frontend/` | built into the backend image | Talks only to `/api/*`. |
 
@@ -37,8 +37,22 @@ The only contract between scanner and backend is an **nmap XML file**.
 - `OUTDATED_SERVICE` is **in addition** to the service's own finding. List: vsftpd 2.3.4; OpenSSH < 7.4; Apache httpd ≤ 2.2.x; Microsoft IIS ≤ 7.5; Samba ≤ 3.x. Parse versions like `8.4p1 Debian 5+deb11u3`.
 - `UNKNOWN_DEVICE`: no MAC `vendor` attribute and no hostname and ≥ 1 open port; CSV port column empty.
 - `UPNP_EXPOSED` / `SNMP_EXPOSED` only on UDP.
+- One finding per (IP, port, code): the same service on two ports of one device gives two rows
+  (e.g. AirPlay `rtsp` on 5000 and 7000). Exceptions: `SMB_EXPOSED` and `UNKNOWN_DEVICE` (one per
+  device). The brief does not spell this out; it matches the Validation Set. Confirm at kickoff.
 - Score = `max(0, 100 − Σ points)`. Points: High 20, Medium 10, Low 5, Info 0.
+- Agreed interpretations where the brief is silent (D1–D7, covered by `tests/test_rules_decisions.py`).
+  Follow the "Report when" column literally:
+  - D1: only HTTP has an SSL condition; `ftp` / `telnet` with `tunnel="ssl"` are still reported.
+  - D2: service names are exact (`http`, not `http-proxy` / `https-alt`; `mongodb`, not `mongod`).
+  - D3: a version range or wildcard that may include a newer release (Samba `3.X - 4.X`, OpenSSH `7.X`) is not outdated.
+  - D4: `OUTDATED_SERVICE` is reported even when the port has no finding of its own.
+  - D5: see "one finding per (IP, port, code)" above.
+  - D6: `netcheck analyze` reads every XML directly inside a folder, or one XML with an explicit `--out` directory.
+  - D7: CSVs are byte-identical in format to the official answer files (UTF-8, no BOM, CRLF).
 - CSV order: file → IP (numeric) → port (numeric, empty last) → code. Severity lowercase. Unreadable file → `ERROR` in `scores.csv`, continue with the other files.
+- CSVs and CLI summaries use the same file label. Preserve ordinary timestamps such as
+  `T5_202611081200.xml`, mask device MACs, and use the same collision suffix for folder exports and single-file reruns.
 - The catalog lives as **data** in `analysis/catalog.py`. Change rules there, not with scattered `if`s.
 - Never add a "smart" exception that is not in the catalog (e.g. treating `mosquitto version …` as `mqtt`). Document such cases in README → Limitations instead.
 
@@ -46,7 +60,8 @@ The only contract between scanner and backend is an **nmap XML file**.
 
 ```bash
 docker compose up -d --build                     # app on http://127.0.0.1:8001
-docker compose run --rm app pytest -q            # all tests
+docker compose run --rm app pytest -q            # all backend tests
+python3 -m unittest discover -s scanner/tests    # scanner tests (stdlib only, no network)
 docker compose run --rm app netcheck analyze /app/tests/fixtures/validation --out /data/input/validation_results
 python3 scanner/agent.py network                 # detected network
 python3 scanner/agent.py scan --confirm          # live scan (host, after scanner/install.sh)
@@ -66,15 +81,25 @@ gitleaks detect --source . --no-banner           # must be clean
 - Treat banners, titles and hostnames as untrusted text: escape in the UI, never `dangerouslySetInnerHTML`, never `shell=True`.
 - Mask MAC addresses in **every** output (API, CSV, UI, logs) via `analysis/privacy.py`.
 - Never widen the scope guard (`scanner/guard.py`, `netcheck-nmap`): private IPv4 only, ≤ /24, inside the detected subnet, explicit confirmation. Never let a client choose nmap options.
+- Network detection must find **exactly one** physical network. With two (e.g. hotspot Wi-Fi + venue
+  cable) it refuses; never "fix" this by picking one (the default route usually points at the venue,
+  and scanning it disqualifies the team). The rule lives in both `detect.py` and `netcheck-nmap`.
+- The agent HTTP API accepts only the app's server-side client: Host `127.0.0.1`/`localhost`, no
+  `Origin` header, `Content-Type: application/json` on POST. Do not add CORS or relax these checks.
 - Do not run anything as root except `netcheck-nmap`. The container runs as a non-root user.
 - Never scan anything to "test" a change. Use the XML fixtures.
 
 ## LLM rules (`explain/llm.py`)
 
-- Input: only findings of the current scan. Output: rephrasing or answers grounded in that evidence.
+- Input: only findings of the current scan. Output: statements rendered from verified evidence.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
 - Never produce or change findings, severities or scores.
 - Always fall back to `explain/static.py` on error or timeout.
+- Accept only IDs from the records offered for that question. Python renders scan facts and the
+  supplied remediation steps. Check all explicit IPs against the scan before contacting the model.
+- Privacy: use a loopback model endpoint with proxies and redirects disabled. Never send MAC addresses to the model.
+- Exclude raw banners and page titles from prompts. Treat recorded device labels as untrusted data.
+- Tests: `docker compose run --rm app pytest -q tests/test_llm.py` (mock server, no real model needed).
 
 ## User-facing text
 

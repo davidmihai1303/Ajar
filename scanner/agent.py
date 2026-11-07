@@ -36,6 +36,7 @@ from guard import ScopeError, check_scope
 
 WRAPPER = "/usr/local/sbin/netcheck-nmap"
 MAX_BODY_BYTES = 1024
+REFUSAL_DRAIN_TIMEOUT_SECONDS = 0.2
 SCAN_TIMEOUT_SECONDS = 660
 _scan_lock = threading.Lock()
 
@@ -63,8 +64,10 @@ def run_scan(confirm: bool, target: str = "") -> dict:
         _scan_lock.release()
     if result.returncode != 0:
         raise ScanError(result.stderr.strip()[:500] or "The scan failed.")
-    xml_path: str = result.stdout.strip().splitlines()[-1]
-    return {"network": info.to_dict(), "target": str(net), "xml_path": xml_path}
+    lines: list = result.stdout.strip().splitlines()
+    if not lines:
+        raise ScanError("The scan finished but did not report where the results were saved.")
+    return {"network": info.to_dict(), "target": str(net), "xml_path": lines[-1]}
 
 
 CONSENT_TEXT = {
@@ -101,13 +104,39 @@ def cli(argv: list) -> int:
     except ScopeError as e:
         print(f"REFUZAT / REFUSED\n  RO: {e.ro}\n  EN: {e.en}", file=sys.stderr)
         return 2
-    except (DetectError, ScanError) as e:
+    except DetectError as e:
+        print(f"EROARE / ERROR\n  RO: {e.ro}\n  EN: {e.en}", file=sys.stderr)
+        return 1
+    except ScanError as e:
         print(f"EROARE / ERROR: {e}", file=sys.stderr)
         return 1
     return 0
 
 
 # ---------------------------------------------------------------- HTTP
+
+def is_trusted_request(headers, port: int, method: str) -> tuple:
+    """Pure check of who is calling. Returns (ok, reason).
+
+    The agent listens on 127.0.0.1, but a web page open in the user's browser can still send
+    requests to 127.0.0.1. Only the app's server-side client should talk to the agent:
+      * Host must be 127.0.0.1:<port> or localhost:<port>  (blocks DNS rebinding)
+      * no Origin header                                   (browsers always add it to cross-site
+                                                            POSTs; the app's HTTP client does not)
+      * POST must declare Content-Type: application/json   (a plain HTML form or a text/plain
+                                                            "simple request" cannot set it)
+    """
+    host: str = (headers.get("Host") or "").strip().lower()
+    if host not in (f"127.0.0.1:{port}", f"localhost:{port}"):
+        return False, "unexpected Host header"
+    if headers.get("Origin") is not None:
+        return False, "browser requests are not accepted"
+    if method == "POST":
+        ctype: str = (headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            return False, "Content-Type must be application/json"
+    return True, ""
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "netcheck-agent"
@@ -120,22 +149,60 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _drain_body(self) -> None:
+        """Discard pending body bytes on close to reduce resets for clients still writing.
+
+        Bounded: one socket read of at most MAX_BODY_BYTES, with a short timeout. An invalid
+        Content-Length still gets that one bounded read, because the client did send a body.
+        """
+        try:
+            length: int = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = MAX_BODY_BYTES
+        if length <= 0:
+            return
+        self.connection.settimeout(REFUSAL_DRAIN_TIMEOUT_SECONDS)
+        try:
+            # read1 makes at most one socket read, even if the body arrives in fragments.
+            self.rfile.read1(min(length, MAX_BODY_BYTES))
+        except (TimeoutError, ConnectionError):
+            pass
+
+    def _trusted(self, method: str) -> bool:
+        ok, reason = is_trusted_request(self.headers, self.server.server_address[1], method)
+        if not ok:
+            self.close_connection = True
+            self._send(403, {"error": "forbidden", "reason": reason})
+            if method == "POST":
+                self._drain_body()
+        return ok
+
     def do_GET(self) -> None:
+        if not self._trusted("GET"):
+            return
         if self.path != "/network":
             self._send(404, {"error": "not found"})
             return
         try:
             self._send(200, network_summary())
         except DetectError as e:
-            self._send(503, {"error": str(e)})
+            self._send(503, {"error": e.en, "en": e.en, "ro": e.ro})
 
     def do_POST(self) -> None:
+        if not self._trusted("POST"):
+            return
         if self.path != "/scan":
             self._send(404, {"error": "not found"})
             return
-        length: int = int(self.headers.get("Content-Length") or 0)
+        try:
+            length: int = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
         if length <= 0 or length > MAX_BODY_BYTES:
+            # Same as a 403: answer first, then a bounded drain, so the client is not reset.
+            self.close_connection = True
             self._send(400, {"error": "invalid body"})
+            self._drain_body()
             return
         try:
             body = json.loads(self.rfile.read(length))
@@ -152,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         except ScanError as e:
             self._send(409 if "already running" in str(e) else 500, {"error": str(e)})
         except DetectError as e:
-            self._send(503, {"error": str(e)})
+            self._send(503, {"error": e.en, "en": e.en, "ro": e.ro})
 
     def log_message(self, fmt: str, *args) -> None:
         sys.stderr.write("[agent] " + fmt % args + "\n")
