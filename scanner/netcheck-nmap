@@ -12,7 +12,7 @@ Usage:  sudo -n /usr/local/sbin/netcheck-nmap <cidr>
 
 It re-checks the target independently of the agent (defense in depth):
   * must be a private IPv4 network, /24 or smaller
-  * must lie inside the subnet of the interface that holds the default route
+  * must lie inside the subnet of the only connected physical interface
 Then it runs a FIXED nmap command (no user-supplied options) and writes the XML
 to a fixed directory. The last line printed on stdout is the XML path.
 """
@@ -52,34 +52,32 @@ EXCLUDED_PREFIXES = ("lo", "tun", "tap", "wg", "tailscale", "zt", "ppp",
 
 
 def choose_subnet(addrs: list) -> ipaddress.IPv4Network:
-    """Pure. Same rule as scanner/detect.py, duplicated on purpose (no imports from the repo):
-    exactly ONE physical network with a private IPv4 must be connected, otherwise ValueError.
-    With several (e.g. hotspot Wi-Fi + venue cable) we refuse instead of guessing, because the
-    default route would point at the venue network and make it look like "our" subnet."""
-    candidates: dict = {}
-    for entry in addrs:
-        name: str = entry.get("ifname", "")
-        flags: list = entry.get("flags", ["UP"])
-        if name.startswith(EXCLUDED_PREFIXES) or "UP" not in flags or "NO-CARRIER" in flags:
-            continue
-        for info in entry.get("addr_info", []):
+    """Repeat the agent's single-interface check independently inside the privileged wrapper."""
+    connected = []
+    for interface in addrs:
+        name = interface["ifname"]
+        flags = interface["flags"]
+        if not name.startswith(EXCLUDED_PREFIXES) and "UP" in flags and "NO-CARRIER" not in flags:
+            connected.append(interface)
+
+    if len(connected) > 1:
+        names = ", ".join(sorted(interface["ifname"] for interface in connected))
+        raise ValueError(f"connected to more than one network ({names}); disconnect from all but the team hotspot")
+
+    if connected:
+        for info in connected[0].get("addr_info", []):
             if info.get("family") != "inet":
                 continue
             ip = ipaddress.ip_address(info["local"])
             if ip.is_private and not ip.is_loopback and not ip.is_link_local:
-                candidates[name] = ipaddress.ip_network(f"{info['local']}/{info['prefixlen']}", strict=False)
-                break
-    if not candidates:
-        raise ValueError("no physical network with a private IPv4 address")
-    if len(candidates) > 1:
-        raise ValueError("connected to more than one network (" + ", ".join(sorted(candidates))
-                         + "); disconnect from all but the team hotspot")
-    return next(iter(candidates.values()))
+                return ipaddress.ip_network(f"{ip}/{info['prefixlen']}", strict=False)
+
+    raise ValueError("no physical network with a private IPv4 address")
 
 
 def current_subnet() -> ipaddress.IPv4Network:
     ip_bin: str = first_existing(IP_BINARIES)
-    addrs = json.loads(subprocess.run([ip_bin, "-j", "-4", "addr", "show"],
+    addrs = json.loads(subprocess.run([ip_bin, "-j", "addr", "show"],
                                       capture_output=True, text=True).stdout or "[]")
     try:
         return choose_subnet(addrs)

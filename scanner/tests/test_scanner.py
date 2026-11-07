@@ -19,6 +19,7 @@ SCANNER = os.path.dirname(HERE)
 sys.path.insert(0, SCANNER)
 
 import agent  # noqa: E402
+import detect  # noqa: E402
 from detect import DetectError, choose_network  # noqa: E402
 from guard import ScopeError, check_scope  # noqa: E402
 
@@ -33,9 +34,9 @@ def load_wrapper():
     return module
 
 
-def iface(name: str, ip: str, prefix: int, flags=None) -> dict:
+def iface(name: str, ip: str, prefix: int, flags=None, family: str = "inet") -> dict:
     return {"ifname": name, "flags": flags or ["BROADCAST", "UP", "LOWER_UP"],
-            "addr_info": [{"family": "inet", "local": ip, "prefixlen": prefix}]}
+            "addr_info": [{"family": family, "local": ip, "prefixlen": prefix}]}
 
 
 LOOPBACK = iface("lo", "127.0.0.1", 8, ["LOOPBACK", "UP", "LOWER_UP"])
@@ -153,6 +154,40 @@ class WrapperTests(unittest.TestCase):
         for name in ("detect", "guard", "agent"):
             self.assertNotIn(f"import {name}", source)
             self.assertNotIn(f"from {name}", source)
+
+
+class InterfaceInventoryTests(unittest.TestCase):
+    def test_both_guards_count_the_second_link_before_selecting_an_address(self):
+        wrapper = load_wrapper()
+        second_links = {
+            "public IPv4": iface("enp3s0", "8.8.8.8", 24),
+            "IPv6 only": iface("enp3s0", "2001:db8::2", 64, family="inet6"),
+            "awaiting an address": {**VENUE_CABLE, "addr_info": []},
+        }
+        for label, second in second_links.items():
+            with self.subTest(link=label):
+                inventory = [HOTSPOT, second]
+                with self.assertRaisesRegex(DetectError, "more than one network"):
+                    choose_network(ROUTES, inventory)
+                with self.assertRaisesRegex(ValueError, "more than one network"):
+                    wrapper.choose_subnet(inventory)
+                with self.assertRaisesRegex(DetectError, "private IPv4"):
+                    choose_network([], [second])
+                with self.assertRaisesRegex(ValueError, "private IPv4"):
+                    wrapper.choose_subnet([second])
+
+    def test_both_entry_points_request_all_address_families(self):
+        with mock.patch.object(detect, "_ip_json", side_effect=[ROUTES, [HOTSPOT]]) as query, \
+                mock.patch.object(detect, "_ssid", return_value=""):
+            self.assertEqual(detect.detect_network().subnet, HOTSPOT_NET)
+        self.assertEqual(query.call_args, mock.call("addr", "show"))
+
+        wrapper = load_wrapper()
+        with mock.patch.object(wrapper, "first_existing", return_value="/usr/bin/ip"), \
+                mock.patch.object(wrapper.subprocess, "run", return_value=mock.Mock(
+                    stdout=json.dumps([HOTSPOT]))) as run:
+            self.assertEqual(str(wrapper.current_subnet()), HOTSPOT_NET)
+        self.assertEqual(run.call_args.args[0], ["/usr/bin/ip", "-j", "addr", "show"])
 
 
 class TrustedRequestTests(unittest.TestCase):

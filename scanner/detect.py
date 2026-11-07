@@ -56,45 +56,36 @@ def _ip_json(*args: str) -> list:
     return json.loads(_run(ip_bin, "-j", *args) or "[]")
 
 
-def physical_networks(addrs: list) -> dict:
-    """Pure. ifname -> (local_ip, prefixlen) for every UP, non-virtual interface with a private IPv4."""
-    found: dict = {}
-    for entry in addrs:
-        name: str = entry.get("ifname", "")
-        flags: list = entry.get("flags", ["UP"])
-        if is_excluded(name) or "UP" not in flags or "NO-CARRIER" in flags:
-            continue
-        for info in entry.get("addr_info", []):
-            if info.get("family") != "inet":
-                continue
-            ip = ipaddress.ip_address(info["local"])
-            if ip.is_private and not ip.is_loopback and not ip.is_link_local:
-                found[name] = (info["local"], int(info["prefixlen"]))
-                break
-    return found
-
-
 def choose_network(routes: list, addrs: list) -> tuple:
-    """Pure function (unit-testable). Returns (ifname, local_ip, prefixlen, gateway).
+    """Return (interface, local IPv4, prefix length, gateway) for the sole connected interface."""
+    connected = []
+    for interface in addrs:
+        flags = interface["flags"]
+        if not is_excluded(interface["ifname"]) and "UP" in flags and "NO-CARRIER" not in flags:
+            connected.append(interface)
 
-    Exactly one physical network must be connected. Zero or several -> DetectError.
-    """
-    candidates: dict = physical_networks(addrs)
-    if not candidates:
-        raise DetectError("No physical network with a private IPv4 address was found. Connect to the team hotspot.",
-                          "Nu am găsit nicio rețea fizică cu adresă IPv4 privată. Conectează-te la hotspotul echipei.")
-    if len(candidates) > 1:
-        names: str = ", ".join(sorted(candidates))
+    if len(connected) > 1:
+        names = ", ".join(sorted(interface["ifname"] for interface in connected))
         raise DetectError(
             f"This laptop is connected to more than one network ({names}). "
             "Disconnect from all of them except the team hotspot, then try again.",
             f"Laptopul este conectat la mai multe rețele ({names}). "
             "Deconectează-te de la toate, în afară de hotspotul echipei, apoi încearcă din nou.")
 
-    name, (local, prefix) = next(iter(candidates.items()))
-    gateway: str = next((r.get("gateway", "") for r in routes
-                         if r.get("dst") == "default" and r.get("dev") == name), "")
-    return name, local, prefix, gateway
+    if connected:
+        interface = connected[0]
+        name = interface["ifname"]
+        for info in interface.get("addr_info", []):
+            if info.get("family") != "inet":
+                continue
+            ip = ipaddress.ip_address(info["local"])
+            if ip.is_private and not ip.is_loopback and not ip.is_link_local:
+                gateway = next((r.get("gateway", "") for r in routes
+                                if r.get("dst") == "default" and r.get("dev") == name), "")
+                return name, info["local"], int(info["prefixlen"]), gateway
+
+    raise DetectError("No physical network with a private IPv4 address was found. Connect to the team hotspot.",
+                      "Nu am găsit nicio rețea fizică cu adresă IPv4 privată. Conectează-te la hotspotul echipei.")
 
 
 def _ssid(ifname: str) -> str:
@@ -110,7 +101,8 @@ def _ssid(ifname: str) -> str:
 
 def detect_network() -> NetworkInfo:
     routes: list = _ip_json("-4", "route", "show")
-    addrs: list = _ip_json("-4", "addr", "show")
+    # An IPv4-only inventory would hide a second IPv6-only connection.
+    addrs: list = _ip_json("addr", "show")
     ifname, local, prefix, gateway = choose_network(routes, addrs)
     subnet = ipaddress.ip_network(f"{local}/{prefix}", strict=False)
     return NetworkInfo(interface=ifname, address=local, subnet=str(subnet),
