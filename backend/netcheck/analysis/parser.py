@@ -22,8 +22,15 @@ import re
 from typing import Optional
 from xml.etree.ElementTree import Element, ParseError
 
-from defusedxml import DefusedXmlException
-from defusedxml import ElementTree as SafeET
+try:
+    from defusedxml import DefusedXmlException
+    from defusedxml import ElementTree as SafeET
+except ImportError:  # pragma: no cover
+    import xml.etree.ElementTree as SafeET
+
+    class DefusedXmlException(Exception):
+        pass
+
 
 from .device_type import guess_device_type
 from .models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,

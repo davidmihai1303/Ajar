@@ -1,13 +1,18 @@
-"""Analysis package: pure, deterministic nmap XML evaluation and scoring."""
-from netcheck.analysis.catalog import CATALOG, CatalogEntry
-from netcheck.analysis.device_type import guess_device_type
-from netcheck.analysis.export import export_results
-from netcheck.analysis.models import Device, Finding, Port, ScanResult
-from netcheck.analysis.parser import parse_nmap_xml
-from netcheck.analysis.privacy import mask_mac
-from netcheck.analysis.rules import analyze_device_findings, analyze_devices, classify_port_findings
-from netcheck.analysis.scoring import calculate_score
-from netcheck.analysis.versions import check_outdated_service, parse_version_tuple
+"""④⑤ Deterministic analysis: XML -> devices, findings, score. No network, no LLM, no DB."""
+from .catalog import CATALOG, CatalogEntry
+from .device_type import guess_device_type
+from .export import analyze_file, export_folder
+from .models import Device, Finding, Port, ScanResult
+from .parser import parse_scan
+from .privacy import mask_mac, mask_macs_in_text
+from .rules import evaluate_devices
+from .scoring import compute_score
+
+# Aliases for convenience
+parse_nmap_xml = parse_scan
+export_results = export_folder
+calculate_score = compute_score
+analyze_devices = evaluate_devices
 
 __all__ = [
     "CATALOG",
@@ -17,13 +22,15 @@ __all__ = [
     "Finding",
     "ScanResult",
     "mask_mac",
+    "mask_macs_in_text",
     "guess_device_type",
-    "parse_version_tuple",
-    "check_outdated_service",
+    "compute_score",
     "calculate_score",
-    "classify_port_findings",
-    "analyze_device_findings",
+    "evaluate_devices",
     "analyze_devices",
+    "parse_scan",
     "parse_nmap_xml",
+    "analyze_file",
+    "export_folder",
     "export_results",
 ]

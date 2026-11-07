@@ -5,10 +5,12 @@ or change on reconnects, but devices on a local subnet are compared by IP.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from netcheck.analysis.models import Device, Finding, ScanResult
+from netcheck.analysis.scoring import compute_score
 
 
 @dataclass
@@ -63,11 +65,23 @@ class ScanDiff:
             "score_after": self.score_after,
             "score_change": self.score_change,
             "new_devices": [
-                {"ip": d.ip, "mac": d.mac, "vendor": d.vendor, "hostname": d.hostname, "device_type": d.device_type}
+                {
+                    "ip": d.ip,
+                    "mac": getattr(d, "mac_masked", getattr(d, "mac", "")),
+                    "vendor": d.vendor,
+                    "hostname": d.hostname,
+                    "device_type": d.device_type,
+                }
                 for d in self.new_devices
             ],
             "removed_devices": [
-                {"ip": d.ip, "mac": d.mac, "vendor": d.vendor, "hostname": d.hostname, "device_type": d.device_type}
+                {
+                    "ip": d.ip,
+                    "mac": getattr(d, "mac_masked", getattr(d, "mac", "")),
+                    "vendor": d.vendor,
+                    "hostname": d.hostname,
+                    "device_type": d.device_type,
+                }
                 for d in self.removed_devices
             ],
             "newly_opened_ports": self.newly_opened_ports,
@@ -88,30 +102,65 @@ class ScanDiff:
         }
 
 
-def compute_diff(prev: ScanResult, curr: ScanResult) -> ScanDiff:
+def _extract_scan_info(scan_obj: Any) -> tuple[str, Iterable[Device], list[Finding], Optional[int]]:
+    """Helper to extract (scan_id, devices, findings, score) from either ScanRecord or ScanResult."""
+    # scan_id
+    scan_id = getattr(scan_obj, "scan_id", getattr(scan_obj, "file", "unknown"))
+
+    # devices
+    devices = getattr(scan_obj, "devices", ())
+
+    # findings
+    findings = list(getattr(scan_obj, "findings", ()))
+
+    # score
+    score = getattr(scan_obj, "score", None)
+    if score is None and findings:
+        score = compute_score(findings)
+
+    return scan_id, devices, findings, score
+
+
+def compute_diff(
+    prev: Any,
+    curr: Any,
+    prev_findings: Sequence[Finding] = (),
+    curr_findings: Sequence[Finding] = (),
+    prev_score: Optional[int] = None,
+    curr_score: Optional[int] = None,
+) -> ScanDiff:
     """Compute difference between prev (older) and curr (newer) scans BY IP."""
+    prev_id, prev_devs, p_finds, p_score = _extract_scan_info(prev)
+    curr_id, curr_devs, c_finds, c_score = _extract_scan_info(curr)
+
+    findings_prev = list(prev_findings) if prev_findings else p_finds
+    findings_curr = list(curr_findings) if curr_findings else c_finds
+
+    effective_score_before = prev_score if prev_score is not None else p_score
+    effective_score_after = curr_score if curr_score is not None else c_score
+
     score_change = None
-    if prev.score is not None and curr.score is not None:
-        score_change = curr.score - prev.score
+    if effective_score_before is not None and effective_score_after is not None:
+        score_change = effective_score_after - effective_score_before
 
     # Devices diff by IP (NEVER by MAC)
-    prev_devs_by_ip = {d.ip: d for d in prev.devices}
-    curr_devs_by_ip = {d.ip: d for d in curr.devices}
+    prev_devs_by_ip = {d.ip: d for d in prev_devs}
+    curr_devs_by_ip = {d.ip: d for d in curr_devs}
 
     new_devices = [curr_devs_by_ip[ip] for ip in curr_devs_by_ip if ip not in prev_devs_by_ip]
     removed_devices = [prev_devs_by_ip[ip] for ip in prev_devs_by_ip if ip not in curr_devs_by_ip]
 
     # Ports diff (only open ports count)
-    def open_ports_map(devices: list[Device]) -> dict[tuple[str, int, str], str]:
+    def open_ports_map(devs: Iterable[Device]) -> dict[tuple[str, int, str], str]:
         ports: dict[tuple[str, int, str], str] = {}
-        for dev in devices:
-            for p in dev.ports:
-                if p.state == "open":
-                    ports[(dev.ip, p.port, p.protocol.lower())] = p.service_name
+        for dev in devs:
+            for p in getattr(dev, "open_ports", [pt for pt in dev.ports if getattr(pt, "is_open", pt.state == "open")]):
+                service = getattr(p, "service", getattr(p, "service_name", ""))
+                ports[(dev.ip, p.port, p.protocol.lower())] = service
         return ports
 
-    prev_ports = open_ports_map(prev.devices)
-    curr_ports = open_ports_map(curr.devices)
+    prev_ports = open_ports_map(prev_devs)
+    curr_ports = open_ports_map(curr_devs)
 
     newly_opened_ports = [
         {"ip": k[0], "port": k[1], "protocol": k[2], "service": curr_ports[k]}
@@ -125,12 +174,11 @@ def compute_diff(prev: ScanResult, curr: ScanResult) -> ScanDiff:
     ]
 
     # Findings diff by (ip, port, finding_code)
-    # Note: port can be None (e.g. UNKNOWN_DEVICE)
     def finding_key(f: Finding) -> tuple[str, Optional[int], str]:
         return (f.ip, f.port, f.code)
 
-    prev_findings_map = {finding_key(f): f for f in prev.findings}
-    curr_findings_map = {finding_key(f): f for f in curr.findings}
+    prev_findings_map = {finding_key(f): f for f in findings_prev}
+    curr_findings_map = {finding_key(f): f for f in findings_curr}
 
     resolved_findings = [
         prev_findings_map[k] for k in prev_findings_map if k not in curr_findings_map
@@ -143,10 +191,10 @@ def compute_diff(prev: ScanResult, curr: ScanResult) -> ScanDiff:
     ]
 
     return ScanDiff(
-        prev_scan_id=prev.scan_id,
-        curr_scan_id=curr.scan_id,
-        score_before=prev.score,
-        score_after=curr.score,
+        prev_scan_id=prev_id,
+        curr_scan_id=curr_id,
+        score_before=effective_score_before,
+        score_after=effective_score_after,
         score_change=score_change,
         new_devices=new_devices,
         removed_devices=removed_devices,
