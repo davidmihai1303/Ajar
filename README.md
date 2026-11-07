@@ -138,7 +138,7 @@ Smarthack/
 │   │   ├── history/             SQLite store, diff
 │   │   ├── explain/             static texts (YAML) + optional LLM
 │   │   ├── api/                 FastAPI routes + agent client
-│   │   ├── cli.py               `netcheck analyze <folder>`
+│   │   ├── cli.py               `netcheck analyze <folder|file>`, `netcheck analyze-file <file>`
 │   │   └── config.py            environment variables only
 │   └── tests/
 │       └── fixtures/            Validation Set + our lab scans
@@ -221,6 +221,16 @@ docker compose run --rm app netcheck analyze /data/input/test_set --out /data/in
 ```
 
 An unreadable file gets `ERROR` in `scores.csv`, and the other files are still processed.
+The `file` column always holds the real file name, exactly as in the Test Set.
+
+Without Docker (e.g. as a fallback for the live checks):
+
+```bash
+cd backend && pip install -e ".[test]"
+netcheck analyze ../input/test_set --out ../input/test_set/results   # whole folder → both CSVs
+netcheck analyze ../input/test_set/T3.xml --out /tmp/rerun           # live check #1: one file → its rows
+netcheck analyze-file ../input/test_set/T3.xml                       # readable findings + score (RO / EN)
+```
 
 ### Live scan
 
@@ -399,7 +409,7 @@ Details: [`lab/README.md`](lab/README.md).
 |---|---|
 | Hotspot lab + before/after scans | done |
 | Scanner: detection, guard, root wrapper, agent, installer | done |
-| Analysis (parser, rules, score, CSV) | scaffold, next |
+| Analysis (parser, rules, score, CSV) | done: Validation Set 24/24 rows, 8/8 scores, CSVs byte-identical to the official answers |
 | Explanations RO/EN | scaffold |
 | History + diff | scaffold |
 | API + frontend | scaffold |
