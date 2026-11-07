@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff, Severity } from "../api/proposedTypes";
 import { formatDate } from "../i18n";
+import { downloadDesktopWrapper } from "../lib/downloadWrapper";
 import { bySeverity, fixFirst, scoreLevel, severityCounts } from "../lib/scan";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
 import FindingCard from "../components/FindingCard";
-import { DeviceIcon, IconAsk, IconBell, IconChevron, IconRefresh } from "../components/Icons";
+import { DeviceIcon, IconAsk, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
 import ScoreBadge, { SeverityBadge } from "../components/ScoreBadge";
 
 const readOpen = () => {
@@ -211,15 +212,27 @@ export default function Dashboard() {
             <SeverityBadge severity="low" count={counts.low} />
           </div>
 
-          <button
-            type="button"
-            className="button primary large"
-            onClick={startScanFlow}
-            style={{ width: "100%", justifyContent: "center" }}
-          >
-            <IconRefresh size={18} />
-            {t("dashboard.rescan")}
-          </button>
+          <div className="stack" style={{ gap: 10, width: "100%" }}>
+            <button
+              type="button"
+              className="button primary large"
+              onClick={startScanFlow}
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              <IconRefresh size={18} />
+              {t("dashboard.rescan")}
+            </button>
+            <button
+              type="button"
+              className="button large"
+              onClick={downloadDesktopWrapper}
+              style={{ width: "100%", justifyContent: "center" }}
+              title={t("desktop.downloadTitle")}
+            >
+              <IconDownload size={18} />
+              {t("desktop.download")}
+            </button>
+          </div>
         </section>
       ) : (
         <>
