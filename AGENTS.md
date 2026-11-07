@@ -41,7 +41,18 @@ The only contract between scanner and backend is an **nmap XML file**.
   (e.g. AirPlay `rtsp` on 5000 and 7000). Exceptions: `SMB_EXPOSED` and `UNKNOWN_DEVICE` (one per
   device). The brief does not spell this out; it matches the Validation Set. Confirm at kickoff.
 - Score = `max(0, 100 − Σ points)`. Points: High 20, Medium 10, Low 5, Info 0.
+- Agreed interpretations where the brief is silent (D1–D7, covered by `tests/test_rules_decisions.py`).
+  Follow the "Report when" column literally:
+  - D1: only HTTP has an SSL condition; `ftp` / `telnet` with `tunnel="ssl"` are still reported.
+  - D2: service names are exact (`http`, not `http-proxy` / `https-alt`; `mongodb`, not `mongod`).
+  - D3: a version range or wildcard that may include a newer release (Samba `3.X - 4.X`, OpenSSH `7.X`) is not outdated.
+  - D4: `OUTDATED_SERVICE` is reported even when the port has no finding of its own.
+  - D5: see "one finding per (IP, port, code)" above.
+  - D6: `netcheck analyze` reads every XML directly inside a folder, or one XML with an explicit `--out` directory.
+  - D7: CSVs are byte-identical in format to the official answer files (UTF-8, no BOM, CRLF).
 - CSV order: file → IP (numeric) → port (numeric, empty last) → code. Severity lowercase. Unreadable file → `ERROR` in `scores.csv`, continue with the other files.
+- CSVs and CLI summaries use the same file label. Preserve ordinary timestamps such as
+  `T5_202611081200.xml`, mask device MACs, and use the same collision suffix for folder exports and single-file reruns.
 - The catalog lives as **data** in `analysis/catalog.py`. Change rules there, not with scattered `if`s.
 - Never add a "smart" exception that is not in the catalog (e.g. treating `mosquitto version …` as `mqtt`). Document such cases in README → Limitations instead.
 

@@ -24,6 +24,16 @@ def _xml_inputs(folder: Path) -> Iterator[Path]:
     return (path for path in folder.iterdir() if path.suffix.lower() == ".xml" and path.is_file())
 
 
+def scan_paths(input_path: str | Path) -> list[Path]:
+    """Return one XML input or the XML files directly inside a directory, sorted by name."""
+    source = Path(input_path)
+    if source.is_file():
+        if source.suffix.lower() != ".xml":
+            raise OSError("Se acceptă doar fișiere .xml / Expected an .xml file")
+        return [source]
+    return sorted(_xml_inputs(source), key=lambda path: path.name)
+
+
 def _scan_label(path: Path, max_bytes: int) -> str:
     name = mask_scan_filename(path.name)
     if name != mask_macs_in_text(path.name):
@@ -74,14 +84,28 @@ def single_file_label(path: Path, masked_name: str, max_bytes: int = DEFAULT_MAX
 
 def export_folder(folder_path: str | Path, out_dir: str | Path,
                   max_bytes: int = DEFAULT_MAX_XML_BYTES) -> tuple[str, str]:
-    """Export a score for every input XML, including an ERROR row for each unreadable scan."""
-    folder = Path(folder_path)
-    # Enumerate before creating the output: by default, input and output are the same directory.
-    names = {path: _scan_label(path, max_bytes) for path in _xml_inputs(folder)}
-    labels = _unique_labels(names)
-    output = Path(out_dir)
+    """Return the two published CSV paths."""
+    paths, _ = export_scans(folder_path, out_dir, max_bytes)
+    return paths
+
+
+def export_scans(input_path: str | Path, out_dir: str | Path | None = None,
+                 max_bytes: int = DEFAULT_MAX_XML_BYTES) -> tuple[tuple[str, str], list[tuple[str, str]]]:
+    """Publish the CSVs and return their paths and this run's score rows in CSV order."""
+    source = Path(input_path)
+    paths = scan_paths(source)
+    single_file = paths == [source]
+    if single_file and out_dir is None:
+        raise OSError("Pentru un singur fișier, specificați --out / For one XML file, specify --out")
+    names = {path: _scan_label(path, max_bytes) for path in paths}
+    if single_file:
+        labels = {source: single_file_label(source, names[source], max_bytes)}
+    else:
+        labels = _unique_labels(names)
+    output = source if out_dir is None else Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     findings_path, scores_path = (output / name for name in CSV_NAMES)
+    score_rows = []
     with csv_publication(output) as staged:
         staged_findings = staged / findings_path.name
         staged_scores = staged / scores_path.name
@@ -95,6 +119,8 @@ def export_folder(folder_path: str | Path, out_dir: str | Path,
                 scan, findings, score = analyze_file(path, max_bytes)
                 if scan.file != names[path]:
                     raise OSError("Scan changed during export")
-                scores_writer.writerow((label, "ERROR" if score is None else score))
+                row = (label, "ERROR" if score is None else str(score))
+                scores_writer.writerow(row)
+                score_rows.append(row)
                 findings_writer.writerows((label, f.ip, f.port, f.code, f.severity) for f in findings)
-    return str(findings_path), str(scores_path)
+    return (str(findings_path), str(scores_path)), score_rows
