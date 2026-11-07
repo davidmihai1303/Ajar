@@ -37,6 +37,9 @@ The only contract between scanner and backend is an **nmap XML file**.
 - `OUTDATED_SERVICE` is **in addition** to the service's own finding. List: vsftpd 2.3.4; OpenSSH < 7.4; Apache httpd ≤ 2.2.x; Microsoft IIS ≤ 7.5; Samba ≤ 3.x. Parse versions like `8.4p1 Debian 5+deb11u3`.
 - `UNKNOWN_DEVICE`: no MAC `vendor` attribute and no hostname and ≥ 1 open port; CSV port column empty.
 - `UPNP_EXPOSED` / `SNMP_EXPOSED` only on UDP.
+- One finding per (IP, port, code): the same service on two ports of one device gives two rows
+  (e.g. AirPlay `rtsp` on 5000 and 7000). Exceptions: `SMB_EXPOSED` and `UNKNOWN_DEVICE` (one per
+  device). The brief does not spell this out; it matches the Validation Set. Confirm at kickoff.
 - Score = `max(0, 100 − Σ points)`. Points: High 20, Medium 10, Low 5, Info 0.
 - CSV order: file → IP (numeric) → port (numeric, empty last) → code. Severity lowercase. Unreadable file → `ERROR` in `scores.csv`, continue with the other files.
 - The catalog lives as **data** in `analysis/catalog.py`. Change rules there, not with scattered `if`s.
@@ -46,7 +49,8 @@ The only contract between scanner and backend is an **nmap XML file**.
 
 ```bash
 docker compose up -d --build                     # app on http://127.0.0.1:8001
-docker compose run --rm app pytest -q            # all tests
+docker compose run --rm app pytest -q            # all backend tests
+python3 -m unittest discover -s scanner/tests    # scanner tests (stdlib only, no network)
 docker compose run --rm app netcheck analyze /app/tests/fixtures/validation --out /data/input/validation_results
 python3 scanner/agent.py network                 # detected network
 python3 scanner/agent.py scan --confirm          # live scan (host, after scanner/install.sh)
@@ -66,6 +70,11 @@ gitleaks detect --source . --no-banner           # must be clean
 - Treat banners, titles and hostnames as untrusted text: escape in the UI, never `dangerouslySetInnerHTML`, never `shell=True`.
 - Mask MAC addresses in **every** output (API, CSV, UI, logs) via `analysis/privacy.py`.
 - Never widen the scope guard (`scanner/guard.py`, `netcheck-nmap`): private IPv4 only, ≤ /24, inside the detected subnet, explicit confirmation. Never let a client choose nmap options.
+- Network detection must find **exactly one** physical network. With two (e.g. hotspot Wi-Fi + venue
+  cable) it refuses; never "fix" this by picking one (the default route usually points at the venue,
+  and scanning it disqualifies the team). The rule lives in both `detect.py` and `netcheck-nmap`.
+- The agent HTTP API accepts only the app's server-side client: Host `127.0.0.1`/`localhost`, no
+  `Origin` header, `Content-Type: application/json` on POST. Do not add CORS or relax these checks.
 - Do not run anything as root except `netcheck-nmap`. The container runs as a non-root user.
 - Never scan anything to "test" a change. Use the XML fixtures.
 
