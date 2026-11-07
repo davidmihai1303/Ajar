@@ -216,6 +216,28 @@ class TrustedRequestTests(unittest.TestCase):
         self.assertFalse(self.check({"Host": "127.0.0.1:8765"}))
 
 
+class RefusalTests(unittest.TestCase):
+    def test_sends_refusal_before_bounded_body_cleanup(self):
+        handler = agent.Handler.__new__(agent.Handler)
+        handler.server = mock.Mock(server_address=("127.0.0.1", 8765))
+        handler.headers = {"Host": "localhost:8765", "Content-Type": "text/plain", "Content-Length": "12"}
+        handler.connection = mock.Mock()
+        handler.rfile = mock.Mock()
+        handler._send = mock.Mock()
+
+        def pending_body(length):
+            handler._send.assert_called_once()
+            self.assertEqual(handler._send.call_args.args[0], 403)
+            handler.connection.settimeout.assert_called_once_with(agent.REFUSAL_DRAIN_TIMEOUT_SECONDS)
+            raise TimeoutError
+
+        handler.rfile.read1.side_effect = pending_body
+        self.assertFalse(handler._trusted("POST"))
+        self.assertTrue(handler.close_connection)
+        handler.rfile.read1.assert_called_once_with(12)
+        handler.rfile.read.assert_not_called()
+
+
 class AgentHttpTests(unittest.TestCase):
     """Real HTTP round trips against the agent on a random localhost port; scanning is mocked."""
 

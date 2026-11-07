@@ -36,6 +36,7 @@ from guard import ScopeError, check_scope
 
 WRAPPER = "/usr/local/sbin/netcheck-nmap"
 MAX_BODY_BYTES = 1024
+REFUSAL_DRAIN_TIMEOUT_SECONDS = 0.2
 SCAN_TIMEOUT_SECONDS = 660
 _scan_lock = threading.Lock()
 
@@ -149,21 +150,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _drain_body(self) -> None:
-        """Read (and drop) a small request body, so a refusal reaches the client instead of a reset."""
+        """Discard pending body bytes on close to reduce resets for clients still writing."""
         try:
             length: int = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return
         if 0 < length <= MAX_BODY_BYTES:
-            self.rfile.read(length)
+            self.connection.settimeout(REFUSAL_DRAIN_TIMEOUT_SECONDS)
+            try:
+                # read1 makes at most one socket read, even if the body arrives in fragments.
+                self.rfile.read1(length)
+            except (TimeoutError, ConnectionError):
+                pass
 
     def _trusted(self, method: str) -> bool:
         ok, reason = is_trusted_request(self.headers, self.server.server_address[1], method)
         if not ok:
-            if method == "POST":
-                self._drain_body()
             self.close_connection = True
             self._send(403, {"error": "forbidden", "reason": reason})
+            if method == "POST":
+                self._drain_body()
         return ok
 
     def do_GET(self) -> None:
