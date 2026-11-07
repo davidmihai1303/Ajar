@@ -163,6 +163,44 @@ def test_mask_mac(raw, masked):
     assert mask_mac(raw) == masked
 
 
+def test_mac_addresses_are_masked_in_all_scan_text_and_filenames(tmp_path):
+    raw = "D8:43:AE:2E:C3:6D"
+    masked = "D8:43:AE:xx:xx:xx"
+    hosts = (f'<host><status state="up"/><address addrtype="ipv4" addr="192.0.2.1"/>'
+             f'<address addrtype="mac" addr="{raw}" vendor="Vendor {raw}"/>'
+             '<hostnames><hostname name="printer-d8-43-ae-2e-c3-6d.local"/></hostnames>'
+             '<ports><port protocol="tcp" portid="80"><state state="open"/>'
+             '<service name="http" product="unit d843.ae2e.c36d" version="1.0" extrainfo="D843AE2EC36D"/>'
+             f'<script id="http-title"><elem key="title">Login {raw}</elem></script>'
+             f'<script id="extra-{raw}" output="MAC:{raw}:"/></port></ports></host>')
+    report = nmap_xml(hosts)
+    path = tmp_path / f"scan-{raw}.xml"
+    missing = parse_scan(path)
+    path.write_bytes(report)
+    result = parse_scan(path)
+    assert result == parse_bytes(report, str(path))
+    assert missing.file == result.file == f"scan-{masked}.xml"
+    assert parse_bytes(b"", path.name).file == result.file
+    dev = result.devices[0]
+    assert (dev.mac_masked, dev.vendor, dev.hostname) == (masked, f"Vendor {masked}", f"printer-{masked}.local")
+    web = dev.ports[0]
+    assert (web.product, web.extrainfo, web.http_title) == (f"unit {masked}", masked, f"Login {masked}")
+    assert web.scripts[f"extra-{masked}"] == f"MAC:{masked}:"
+
+
+def test_masking_preserves_ipv6_and_redacts_before_truncating_text():
+    ipv6 = "2001:db8:aa:bb:cc:dd:ee:ff"
+    assert clean_text(f"printer [{ipv6}]") == f"printer [{ipv6}]"
+    assert clean_text("x" * 499 + " D8:43:AE:2E:C3:6D").endswith("D8:43:AE:xx:")
+
+
+def test_ipv6_interface_label_does_not_expose_a_mac():
+    hosts = ('<host><status state="up"/>'
+             '<address addrtype="ipv6" addr="fe80::1%nic-d8-43-ae-2e-c3-6d"/></host>')
+    result = parse_bytes(nmap_xml(hosts), "scoped.xml")
+    assert result.devices[0].ip == "fe80::1%nic-D8:43:AE:xx:xx:xx"
+
+
 # ------------------------------------------------------------ hostile input (NFR-03)
 
 def test_xxe_external_entity_is_refused(tmp_path):

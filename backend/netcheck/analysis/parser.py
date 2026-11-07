@@ -28,7 +28,7 @@ from defusedxml import ElementTree as SafeET
 from .device_type import guess_device_type
 from .models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                      Device, Port, ScanResult)
-from .privacy import mask_mac
+from .privacy import mask_mac, mask_macs_in_text
 
 DEFAULT_MAX_XML_BYTES = 20 * 1024 * 1024
 MAX_TEXT_CHARS = 512
@@ -40,7 +40,7 @@ def clean_text(value: Optional[str]) -> str:
     if not value:
         return ""
     text = " ".join(_CONTROL_CHARS.sub(" ", value).split())
-    return text[:MAX_TEXT_CHARS]
+    return mask_macs_in_text(text)[:MAX_TEXT_CHARS]
 
 
 def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
@@ -50,12 +50,13 @@ def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
         with open(path, "rb") as fh:
             data = fh.read(max(0, max_bytes + 1))
     except OSError:
-        return ScanResult(file=name, error=ERROR_UNREADABLE)
+        return ScanResult(file=mask_macs_in_text(name), error=ERROR_UNREADABLE)
     return parse_bytes(data, name, max_bytes)
 
 
 def parse_bytes(data: bytes, file: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
     """Parse a report already in memory using the same size limit as the file reader."""
+    file = mask_macs_in_text(os.path.basename(file))
     if len(data) > max_bytes:
         return ScanResult(file=file, error=ERROR_TOO_LARGE)
     try:
@@ -151,7 +152,14 @@ def _valid_ip(value: str, version: int) -> str:
         ip = ipaddress.ip_address(value.strip())
     except ValueError:
         return ""
-    return str(ip) if ip.version == version else ""
+    if ip.version != version:
+        return ""
+    # A scoped IPv6 address may include a user-supplied interface label after '%'.
+    if version == 6 and ip.scope_id:
+        address, _, zone = str(ip).partition("%")
+        zone = clean_text(zone)
+        return f"{address}%{zone}" if zone else address
+    return str(ip)
 
 
 def _ip_sort_key(ip: str) -> tuple:
