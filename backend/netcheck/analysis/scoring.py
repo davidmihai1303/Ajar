@@ -1,16 +1,9 @@
-"""Standard network score calculation (FR-09).
-
-Score = max(0, 100 - sum(points of all findings)).
-Points: High 20, Medium 10, Low 5, Info 0.
-"""
-from __future__ import annotations
-
-from typing import Iterable
-
+"""Standard score: max(0, 100 - sum(points)) (FR-09)."""
+from typing import Sequence
 from netcheck.analysis.models import Finding
 
 
-def calculate_score(findings: Iterable[Finding]) -> int:
-    """Calculate the official security score from 0 to 100."""
+def compute_score(findings: Sequence[Finding]) -> int:
+    """Calculate the standard network score from a list of findings."""
     total_points = sum(f.points for f in findings)
     return max(0, 100 - total_points)

@@ -1,66 +1,50 @@
-"""Device-type guess (FR-03): router, camera, printer, server, pc, iot, unknown."""
+"""Device-type guess for the UI (FR-03): router, camera, printer, iot, computer, phone, tv, nas, server, unknown.
+
+Only a hint shown next to a device. The finding rules never use it, so a wrong guess can never
+change findings or scores.
+"""
 from __future__ import annotations
 
-from typing import Iterable
-from netcheck.analysis.models import Port
+_CAMERA_VENDORS = ("hikvision", "dahua", "axis", "reolink", "amcrest", "foscam", "uniview")
+_PRINTER_VENDORS = ("brother", "epson", "canon", "lexmark", "xerox", "kyocera", "ricoh")
+_ROUTER_VENDORS = ("netgear", "tp-link", "tplink", "mikrotik", "ubiquiti", "zyxel", "d-link", "technicolor", "sagemcom")
+_IOT_VENDORS = ("espressif", "tuya", "shelly", "sonoff", "itead", "philips lighting", "signify")
+_TV_VENDORS = ("roku", "vizio", "tcl", "hisense")
+_NAS_VENDORS = ("synology", "qnap", "western digital")
 
 
-def guess_device_type(
-    ip: str,
-    vendor: str = "",
-    hostname: str = "",
-    ports: Iterable[Port] = (),
-) -> str:
-    """Guess device type based on vendor, hostname, and open services."""
-    v_lower = (vendor or "").lower()
-    h_lower = (hostname or "").lower()
-    services = {p.service_name.lower() for p in ports if p.state == "open"}
-    products = " ".join(p.product.lower() for p in ports if p.state == "open")
-    titles = " ".join(p.title.lower() for p in ports if p.state == "open")
+def _has(text: str, needles: tuple) -> bool:
+    return any(n in text for n in needles)
 
-    # 1. Router / Gateway
-    if any(k in h_lower for k in ["router", "gateway"]):
-        return "router"
-    if any(k in titles for k in ["router login", "router setup", "tp-link router"]):
-        return "router"
-    if any(k in v_lower for k in ["tp-link", "netgear", "ubiquiti", "asus", "cisco"]):
-        if any(p.port in (53, 80, 443, 1900) for p in ports if p.state == "open"):
-            return "router"
 
-    # 2. Camera / Surveillance
-    if "rtsp" in services or any(k in h_lower for k in ["cam", "ipcam", "nvr"]):
+def guess_device_type(vendor: str, hostname: str, ports) -> str:
+    v = (vendor or "").lower()
+    h = (hostname or "").lower()
+    open_ports = [p for p in ports if p.is_open]
+    services = {p.service for p in open_ports}
+
+    if _has(v, _CAMERA_VENDORS) or _has(h, ("camera", "cam-", "ipcam", "nvr")):
         return "camera"
-    if any(k in v_lower for k in ["hikvision", "dahua", "axis", "reolink", "amcrest"]):
+    if _has(h, ("macbook", "imac", "mac-mini", "mac-studio", "mac-pro")):
+        return "computer"
+    if services & {"jetdirect", "ipp"} or _has(v, _PRINTER_VENDORS) or "printer" in h:
+        return "printer"
+    if _has(v, _ROUTER_VENDORS) or _has(h, ("router", "gateway", "fritz", "access-point")):
+        return "router"
+    if _has(v, _NAS_VENDORS) or "nas" in h.split("-"):
+        return "nas"
+    if "mqtt" in services or _has(v, _IOT_VENDORS) or _has(h, ("plug", "bulb", "hub", "sensor")):
+        return "iot"
+    if _has(v, _TV_VENDORS) or _has(h, ("tv", "chromecast", "roku")):
+        return "tv"
+    if _has(h, ("iphone", "android", "galaxy", "pixel", "phone")):
+        return "phone"
+    if services & {"ms-wbt-server", "microsoft-ds", "netbios-ssn", "vnc"} or _has(h, ("laptop", "desktop", "pc-")):
+        return "computer"
+    # Nmap also reports AirPlay receivers as RTSP. Their service and ports still reach the rules.
+    rtsp_banners = (f"{p.product} {p.extrainfo}".lower() for p in open_ports if p.service == "rtsp")
+    if not v.startswith("apple") and any(not _has(banner, ("airplay", "airtunes")) for banner in rtsp_banners):
         return "camera"
-
-    # 3. Printer
-    if "jetdirect" in services or "ipp" in services or "printer" in h_lower:
-        return "printer"
-    if any(k in v_lower for k in ["brother", "canon", "epson", "xerox", "lexmark"]):
-        return "printer"
-    if "hp" in v_lower and ("printer" in h_lower or 9100 in [p.port for p in ports]):
-        return "printer"
-
-    # 4. IoT / Smart Hub
-    if "mqtt" in services or any(k in h_lower for k in ["plug", "smart", "smarthub", "sensor", "hub"]):
-        return "iot"
-    if any(k in v_lower for k in ["espressif", "raspberry pi", "tuya", "sonoff"]):
-        return "iot"
-
-    # 5. Server / NAS
-    if any(k in h_lower for k in ["srv", "server", "nas", "db"]):
+    if services & {"ssh", "mysql", "postgresql", "redis", "mongodb", "ftp"}:
         return "server"
-    if any(s in services for s in ["mysql", "postgresql", "redis", "mongodb", "microsoft-ds"]):
-        return "server"
-    if "synology" in v_lower or "qnap" in v_lower:
-        return "server"
-
-    # 6. Laptop / Desktop PC
-    if any(k in h_lower for k in ["laptop", "desk", "pc", "macbook", "workstation"]):
-        return "pc"
-    if "ms-wbt-server" in services:
-        return "pc"
-    if any(k in v_lower for k in ["dell", "lenovo", "apple", "hp", "samsung"]):
-        return "pc"
-
     return "unknown"

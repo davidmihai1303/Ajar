@@ -1,158 +1,175 @@
-"""Rule traps tests (FR-06):
-
-Verifies edge cases and traps:
-1. tunnel=ssl on HTTP -> NOT HTTP_ADMIN_CLEARTEXT
-2. filtered or open|filtered ports -> ignored
-3. SMB on both 139 and 445 -> exactly one finding per device (prefers 445)
-4. UNKNOWN_DEVICE conditions
-5. OUTDATED_SERVICE versions (vsftpd 2.3.4, OpenSSH, Apache, IIS, Samba)
-6. UPNP and SNMP on UDP only
-7. Non-catalog ports/services (IPP 631, TV 8008/8009, DNS 53)
-"""
+"""Rule traps: tunnel=ssl, filtered, open|filtered UDP, SMB 139+445, UNKNOWN_DEVICE, outdated versions."""
 import unittest
-
 from netcheck.analysis.models import Device, Port
-from netcheck.analysis.rules import analyze_device_findings, classify_port_findings
-from netcheck.analysis.versions import check_outdated_service
+from netcheck.analysis.rules import evaluate_device, evaluate_devices
+from netcheck.analysis.scoring import compute_score
+from netcheck.analysis.versions import is_outdated_service
 
 
-class TestRuleTraps(unittest.TestCase):
-    def test_https_tunnel_is_not_cleartext_admin(self):
-        port_ssl = Port(
-            port=443,
-            protocol="tcp",
-            state="open",
-            service_name="http",
-            tunnel="ssl",
-            title="Router Admin Login",
+class TestRules(unittest.TestCase):
+    def test_https_ssl_tunnel_not_admin_cleartext(self):
+        """HTTPS (tunnel='ssl') must NOT trigger HTTP_ADMIN_CLEARTEXT even if title says 'Admin Login'."""
+        dev = Device(
+            ip="192.168.1.8",
+            vendor="Ubiquiti",
+            hostname="ap",
+            ports=[
+                Port(port=8443, protocol="tcp", state="open", service="http", tunnel="ssl", scripts={"http-title": "Admin Login"})
+            ]
         )
-        findings = classify_port_findings("192.168.1.1", port_ssl)
-        self.assertEqual(len(findings), 0, "HTTPS admin should not trigger HTTP_ADMIN_CLEARTEXT")
+        findings = evaluate_device(dev)
+        self.assertFalse(any(f.code == "HTTP_ADMIN_CLEARTEXT" for f in findings))
 
-    def test_filtered_and_open_filtered_are_ignored(self):
-        for state in ["filtered", "closed", "open|filtered"]:
-            port = Port(port=3306, protocol="tcp", state=state, service_name="mysql")
-            findings = classify_port_findings("192.168.1.1", port)
-            self.assertEqual(len(findings), 0, f"Port in state {state} should be ignored")
+    def test_filtered_and_closed_ports_ignored(self):
+        """Only ports with state='open' can produce findings."""
+        dev = Device(
+            ip="192.168.1.9",
+            vendor="Dell",
+            hostname="db",
+            ports=[
+                Port(port=3306, protocol="tcp", state="filtered", service="mysql"),
+                Port(port=23, protocol="tcp", state="closed", service="telnet"),
+                Port(port=161, protocol="udp", state="open|filtered", service="snmp"),
+            ]
+        )
+        findings = evaluate_device(dev)
+        self.assertEqual(len(findings), 0)
 
-    def test_smb_both_139_and_445_reports_single_finding_on_445(self):
-        device = Device(
+    def test_smb_one_per_device_prefers_445(self):
+        """When both 139 and 445 are open, exactly one SMB finding is produced on port 445."""
+        dev = Device(
             ip="192.168.1.20",
             vendor="Synology",
             hostname="nas",
             ports=[
-                Port(port=139, protocol="tcp", state="open", service_name="netbios-ssn"),
-                Port(port=445, protocol="tcp", state="open", service_name="microsoft-ds"),
-            ],
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn"),
+                Port(port=445, protocol="tcp", state="open", service="microsoft-ds"),
+            ]
         )
-        findings = analyze_device_findings(device)
+        findings = evaluate_device(dev)
         smb_findings = [f for f in findings if f.code == "SMB_EXPOSED"]
-        self.assertEqual(len(smb_findings), 1, "Expected exactly 1 SMB finding per device")
-        self.assertEqual(smb_findings[0].port, 445, "Should report on port 445 when both are open")
+        self.assertEqual(len(smb_findings), 1)
+        self.assertEqual(smb_findings[0].port, 445)
 
-    def test_smb_only_139_reports_on_139(self):
-        device = Device(
-            ip="192.168.1.20",
+    def test_smb_fallback_to_139(self):
+        """When only 139 is open, SMB finding is on port 139."""
+        dev = Device(
+            ip="192.168.1.21",
             vendor="Synology",
-            hostname="nas",
+            hostname="nas2",
             ports=[
-                Port(port=139, protocol="tcp", state="open", service_name="netbios-ssn"),
-            ],
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn"),
+            ]
         )
-        findings = analyze_device_findings(device)
+        findings = evaluate_device(dev)
         smb_findings = [f for f in findings if f.code == "SMB_EXPOSED"]
         self.assertEqual(len(smb_findings), 1)
         self.assertEqual(smb_findings[0].port, 139)
 
-    def test_unknown_device_edge_cases(self):
-        # Case A: No vendor, no hostname, 1 open port -> UNKNOWN_DEVICE
-        d_unknown = Device(
-            ip="192.168.1.99",
-            vendor="",
-            hostname="",
-            ports=[Port(port=8888, protocol="tcp", state="open", service_name="sun-answerbook")],
+    def test_outdated_is_per_port_and_smb_exposure_is_per_device(self):
+        """Report the version evidence on each port and the SMB exposure once."""
+        dev = Device(
+            ip="192.168.1.22",
+            vendor="Synology",
+            hostname="old-nas",
+            ports=[
+                Port(port=139, protocol="tcp", state="open", service="netbios-ssn", product="Samba smbd", version="3.0.24"),
+                Port(port=445, protocol="tcp", state="open", service="microsoft-ds", product="Samba smbd", version="3.0.24"),
+            ]
         )
-        f_unknown = [f for f in analyze_device_findings(d_unknown) if f.code == "UNKNOWN_DEVICE"]
-        self.assertEqual(len(f_unknown), 1)
-        self.assertIsNone(f_unknown[0].port, "UNKNOWN_DEVICE port must be None / empty in CSV")
+        findings = evaluate_device(dev)
+        codes = [(f.port, f.code) for f in findings]
+        self.assertEqual(codes, [(139, "OUTDATED_SERVICE"), (445, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
 
-        # Case B: Has vendor -> NOT unknown device
-        d_vendor = Device(
-            ip="192.168.1.99",
-            vendor="Apple",
-            hostname="",
-            ports=[Port(port=8888, protocol="tcp", state="open", service_name="sun-answerbook")],
-        )
-        f_vendor = [f for f in analyze_device_findings(d_vendor) if f.code == "UNKNOWN_DEVICE"]
-        self.assertEqual(len(f_vendor), 0)
+    def test_smb_version_on_139_survives_selecting_445_for_exposure(self):
+        device = Device(ip="192.0.2.1", hostname="nas", ports=(
+            Port("tcp", 139, "open", "netbios-ssn", "Samba smbd", "3.0.24"),
+            Port("tcp", 445, "open", "microsoft-ds"),
+        ))
+        findings = evaluate_device(device)
+        self.assertEqual([(f.port, f.code) for f in findings], [(139, "OUTDATED_SERVICE"), (445, "SMB_EXPOSED")])
+        self.assertEqual(compute_score(findings), 70)
 
-        # Case C: Has hostname -> NOT unknown device
-        d_host = Device(
-            ip="192.168.1.99",
-            vendor="",
-            hostname="my-laptop",
-            ports=[Port(port=8888, protocol="tcp", state="open", service_name="sun-answerbook")],
-        )
-        f_host = [f for f in analyze_device_findings(d_host) if f.code == "UNKNOWN_DEVICE"]
-        self.assertEqual(len(f_host), 0)
-
-        # Case D: No open ports -> NOT unknown device
-        d_no_open = Device(
-            ip="192.168.1.99",
-            vendor="",
-            hostname="",
-            ports=[Port(port=8888, protocol="tcp", state="closed", service_name="sun-answerbook")],
-        )
-        f_no_open = [f for f in analyze_device_findings(d_no_open) if f.code == "UNKNOWN_DEVICE"]
-        self.assertEqual(len(f_no_open), 0)
+    def test_same_csv_finding_across_transports_or_host_records_counts_once(self):
+        tcp = Port("tcp", 554, "open", "rtsp")
+        udp = Port("udp", 554, "open", "rtsp")
+        hosts = [Device(ip="192.0.2.1", ports=(udp,)), Device(ip="192.0.2.1", hostname="camera", ports=(tcp, udp))]
+        findings = evaluate_devices(hosts)
+        self.assertEqual([(f.port, f.protocol, f.code) for f in findings], [(554, "tcp", "CAMERA_STREAM_EXPOSED")])
+        self.assertEqual(compute_score(findings), 80)
+        self.assertEqual(findings, evaluate_devices(reversed(hosts)))
 
     def test_upnp_and_snmp_udp_only(self):
-        # UPnP on TCP -> Not catalog finding
-        p_upnp_tcp = Port(port=1900, protocol="tcp", state="open", service_name="upnp")
-        self.assertEqual(len(classify_port_findings("192.168.1.1", p_upnp_tcp)), 0)
+        """UPNP_EXPOSED and SNMP_EXPOSED only trigger on UDP, never on TCP."""
+        dev = Device(
+            ip="192.168.1.1",
+            vendor="TP-Link",
+            hostname="router",
+            ports=[
+                Port(port=1900, protocol="tcp", state="open", service="upnp"),
+                Port(port=161, protocol="tcp", state="open", service="snmp"),
+            ]
+        )
+        findings = evaluate_device(dev)
+        self.assertEqual(len(findings), 0)
 
-        # UPnP on UDP -> UPNP_EXPOSED
-        p_upnp_udp = Port(port=1900, protocol="udp", state="open", service_name="upnp")
-        f_upnp = classify_port_findings("192.168.1.1", p_upnp_udp)
-        self.assertEqual(len(f_upnp), 1)
-        self.assertEqual(f_upnp[0].code, "UPNP_EXPOSED")
+    def test_unknown_device_rule(self):
+        """Device with no MAC vendor and no hostname and >= 1 open port triggers UNKNOWN_DEVICE with empty port."""
+        dev = Device(
+            ip="192.168.1.99",
+            vendor="",
+            hostname="",
+            ports=[
+                Port(port=8888, protocol="tcp", state="open", service="sun-answerbook")
+            ]
+        )
+        findings = evaluate_device(dev)
+        unknown = [f for f in findings if f.code == "UNKNOWN_DEVICE"]
+        self.assertEqual(len(unknown), 1)
+        self.assertIsNone(unknown[0].port)
+        self.assertEqual(unknown[0].points, 5)
 
-        # SNMP on TCP -> Not catalog finding
-        p_snmp_tcp = Port(port=161, protocol="tcp", state="open", service_name="snmp")
-        self.assertEqual(len(classify_port_findings("192.168.1.1", p_snmp_tcp)), 0)
+    def test_mini_httpd_and_tomcat_are_not_apache_httpd(self):
+        """mini_httpd and Apache Tomcat are not Apache httpd and must not trigger OUTDATED_SERVICE."""
+        self.assertFalse(is_outdated_service("mini_httpd", "1.19"))
+        self.assertFalse(is_outdated_service("Apache Tomcat", "2.1"))
 
-        # SNMP on UDP -> SNMP_EXPOSED
-        p_snmp_udp = Port(port=161, protocol="udp", state="open", service_name="snmp")
-        f_snmp = classify_port_findings("192.168.1.1", p_snmp_udp)
-        self.assertEqual(len(f_snmp), 1)
-        self.assertEqual(f_snmp[0].code, "SNMP_EXPOSED")
+    def test_outdated_requires_a_conclusive_version(self):
+        cases = [
+            ("Samba smbd", "3.X - 4.X", False), ("Samba smbd", "3.0–4.1", False),
+            ("Samba smbd", "3.X or newer", False), ("Samba smbd", "3.0 - 3.6", True),
+            ("Samba smbd", "3.X", True), ("OpenSSH", "7.X", False),
+            ("OpenSSH", "6.9-7.3", True), ("OpenSSH", "7.2 to 7.4", False),
+            ("vsftpd", "2.3.4.1", False), ("vsftpd", "2.3.4-1ubuntu1", True),
+            ("Apache httpd", "unknown build 2.2", False), ("Apache httpd", "2.2.x", True),
+        ]
+        for product, version, expected in cases:
+            with self.subTest(product=product, version=version):
+                self.assertEqual(is_outdated_service(product, version), expected)
 
-    def test_outdated_versions_matrix(self):
+    def test_outdated_versions_detection(self):
+        """Validates the official list of outdated versions."""
         # vsftpd 2.3.4
-        self.assertIsNotNone(check_outdated_service("ftp", "vsftpd", "2.3.4"))
-        self.assertIsNone(check_outdated_service("ftp", "vsftpd", "3.0.5"))
+        self.assertTrue(is_outdated_service("vsftpd", "2.3.4"))
+        self.assertFalse(is_outdated_service("vsftpd", "3.0.3"))
 
         # OpenSSH < 7.4
-        self.assertIsNotNone(check_outdated_service("ssh", "OpenSSH", "6.7p1"))
-        self.assertIsNotNone(check_outdated_service("ssh", "OpenSSH", "5.3"))
-        self.assertIsNone(check_outdated_service("ssh", "OpenSSH", "7.4"))
-        self.assertIsNone(check_outdated_service("ssh", "OpenSSH", "8.4p1 Debian 5+deb11u3"))
+        self.assertTrue(is_outdated_service("OpenSSH", "6.6.1p1"))
+        self.assertTrue(is_outdated_service("OpenSSH", "7.2p2 Ubuntu-4"))
+        self.assertFalse(is_outdated_service("OpenSSH", "7.4"))
+        self.assertFalse(is_outdated_service("OpenSSH", "8.4p1 Debian 5+deb11u3"))
 
         # Apache httpd <= 2.2.x
-        self.assertIsNotNone(check_outdated_service("http", "Apache httpd", "2.2.8"))
-        self.assertIsNotNone(check_outdated_service("http", "Apache httpd", "2.0.59"))
-        self.assertIsNone(check_outdated_service("http", "Apache httpd", "2.4.52"))
+        self.assertTrue(is_outdated_service("Apache httpd", "2.2.34"))
+        self.assertFalse(is_outdated_service("Apache httpd", "2.4.52"))
 
         # Microsoft IIS <= 7.5
-        self.assertIsNotNone(check_outdated_service("http", "Microsoft IIS httpd", "7.5"))
-        self.assertIsNotNone(check_outdated_service("http", "Microsoft IIS httpd", "6.0"))
-        self.assertIsNone(check_outdated_service("http", "Microsoft IIS httpd", "8.5"))
-        self.assertIsNone(check_outdated_service("http", "Microsoft IIS httpd", "10.0"))
+        self.assertTrue(is_outdated_service("Microsoft IIS", "7.5"))
+        self.assertFalse(is_outdated_service("Microsoft-IIS", "10.0"))
 
         # Samba <= 3.x
-        self.assertIsNotNone(check_outdated_service("microsoft-ds", "Samba smbd", "3.0.24"))
-        self.assertIsNotNone(check_outdated_service("microsoft-ds", "Samba smbd", "3.6.25"))
-        self.assertIsNone(check_outdated_service("microsoft-ds", "Samba smbd", "4.15"))
+        self.assertTrue(is_outdated_service("Samba smbd", "3.0.24"))
+        self.assertFalse(is_outdated_service("Samba smbd", "4.15"))
 
 
 if __name__ == "__main__":

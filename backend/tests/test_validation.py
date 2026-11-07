@@ -1,82 +1,64 @@
-"""Validation Set tests: exactly the 24 expected rows, no extra rows, all 8 scores (incl. ERROR).
-
-This test validates the core contract for 30% of the hackathon grade.
-Matches the official answer key exactly.
-"""
+"""Exercise the production CLI on the public fixtures and the broken-file path."""
 import csv
-import os
-import tempfile
-import unittest
 from pathlib import Path
 
-from netcheck.analysis.export import export_results
-from netcheck.analysis.parser import parse_nmap_xml
+from netcheck import config
+from netcheck.cli import main
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "validation"
-
-
-class TestValidationSet(unittest.TestCase):
-    def setUp(self):
-        self.fixtures_dir = FIXTURES_DIR
-        self.assertTrue(self.fixtures_dir.exists(), f"Fixtures directory {self.fixtures_dir} missing")
-
-        # Find all validation XMLs
-        self.xml_files = sorted(list(self.fixtures_dir.glob("*.xml")))
-        self.assertEqual(len(self.xml_files), 8, f"Expected 8 validation files, found {len(self.xml_files)}")
-
-        # Temporary directory for exported CSVs
-        self.temp_dir = tempfile.TemporaryDirectory()
-
-    def tearDown(self):
-        self.temp_dir.cleanup()
-
-    def test_validation_findings_and_scores_match_expected(self):
-        # 1. Parse all XML files
-        results = [parse_nmap_xml(f) for f in self.xml_files]
-
-        # 2. Export CSVs
-        findings_path, scores_path = export_results(results, self.temp_dir.name)
-
-        # 3. Read generated findings vs expected findings
-        with open(findings_path, mode="r", encoding="utf-8") as f:
-            generated_findings_rows = [line.strip() for line in f if line.strip()]
-
-        expected_findings_file = self.fixtures_dir / "expected_findings.csv"
-        with open(expected_findings_file, mode="r", encoding="utf-8") as f:
-            expected_findings_rows = [line.strip() for line in f if line.strip()]
-
-        # Check total rows (1 header + 24 finding rows)
-        self.assertEqual(
-            len(generated_findings_rows),
-            25,
-            f"Expected exactly 24 finding rows + header (25 total), got {len(generated_findings_rows)}",
-        )
-        self.assertEqual(
-            generated_findings_rows,
-            expected_findings_rows,
-            "Generated findings.csv does not match expected_findings.csv",
-        )
-
-        # 4. Read generated scores vs expected scores
-        with open(scores_path, mode="r", encoding="utf-8") as f:
-            generated_scores_rows = [line.strip() for line in f if line.strip()]
-
-        expected_scores_file = self.fixtures_dir / "expected_scores.csv"
-        with open(expected_scores_file, mode="r", encoding="utf-8") as f:
-            expected_scores_rows = [line.strip() for line in f if line.strip()]
-
-        # Check scores (1 header + 8 score rows)
-        self.assertEqual(
-            len(generated_scores_rows),
-            9,
-            f"Expected exactly 8 score rows + header (9 total), got {len(generated_scores_rows)}",
-        )
-        self.assertEqual(
-            generated_scores_rows,
-            expected_scores_rows,
-            "Generated scores.csv does not match expected_scores.csv",
-        )
+FIXTURES = Path(__file__).parent / "fixtures" / "validation"
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_public_csvs_match_byte_for_byte(tmp_path):
+    assert main(["analyze", str(FIXTURES), "--out", str(tmp_path)]) == 0
+    for name in ("findings.csv", "scores.csv"):
+        assert (tmp_path / name).read_bytes() == (FIXTURES / f"expected_{name}").read_bytes()
+
+
+def test_missing_input_fails_before_creating_output(tmp_path):
+    missing = tmp_path / "missing"
+    assert main(["analyze", str(missing)]) == 1
+    assert not missing.exists()
+    output = tmp_path / "elsewhere"
+    assert main(["analyze", str(missing), "--out", str(output)]) == 1
+    assert not output.exists()
+
+
+def test_failed_nmap_run_and_redirect_are_handled_by_both_commands(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(config, "DEFAULT_LANG", "en")
+    bad = tmp_path / "failed.xml"
+    bad.write_text('<nmaprun><runstats><finished exit="error"/></runstats></nmaprun>')
+    good = tmp_path / "web.xml"
+    good.write_text('<nmaprun><host><status state="up"/><address addrtype="ipv4" addr="192.0.2.1"/>'
+                    '<hostnames><hostname name="router"/></hostnames><ports>'
+                    '<port protocol="tcp" portid="80"><state state="open"/><service name="http"/>'
+                    '<script id="http-title" output="Did not follow redirect to /login">'
+                    '<elem key="redirect_url">/login</elem></script></port></ports></host></nmaprun>')
+    assert main(["analyze-file", str(bad)]) == 1
+    assert "ERROR" in capsys.readouterr().err
+    assert main(["analyze-file", str(good)]) == 0
+    assert "Score: 100" in capsys.readouterr().out
+    assert main(["analyze", str(tmp_path)]) == 0
+    with (tmp_path / "scores.csv").open(newline="") as scores:
+        assert list(csv.reader(scores))[1:] == [["failed.xml", "ERROR"], ["web.xml", "100"]]
+    assert len((tmp_path / "findings.csv").read_text().splitlines()) == 1
+
+
+def test_configured_size_limit_applies_to_both_commands(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MAX_XML_BYTES", 1)
+    scan = tmp_path / "large.xml"
+    scan.write_text("<nmaprun/>")
+    assert main(["analyze-file", str(scan)]) == 1
+    assert main(["analyze", str(tmp_path)]) == 0
+    assert "large.xml,ERROR" in (tmp_path / "scores.csv").read_text()
+
+
+def test_cli_masks_mac_in_filenames_even_on_errors(tmp_path, capsys):
+    path = tmp_path / "printer-D8-43-AE-2E-C3-6D.xml"
+    path.write_text("<nmaprun/>")
+    assert main(["analyze-file", str(path)]) == 0
+    assert "D8:43:AE:xx:xx:xx" in capsys.readouterr().out
+    path.write_text("broken")
+    assert main(["analyze-file", str(path)]) == 1
+    assert "D8:43:AE:xx:xx:xx" in capsys.readouterr().err
+    assert main(["analyze", str(tmp_path)]) == 0
+    assert "printer-D8:43:AE:xx:xx:xx.xml,ERROR" in (tmp_path / "scores.csv").read_text()
