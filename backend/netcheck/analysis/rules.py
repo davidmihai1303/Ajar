@@ -36,7 +36,7 @@ def _findings_for_ip(ip: str, devices: list[Device]) -> list[Finding]:
             else:
                 findings.setdefault((port.port, entry.code), _port_finding(ip, port, entry, evidence))
 
-        if is_outdated_service(port.service, port.product, port.version):
+        if is_outdated_service(port.product, port.version):
             entry = CATALOG["OUTDATED_SERVICE"]
             findings.setdefault((port.port, entry.code),
                                 _port_finding(ip, port, entry, f"{evidence}: {port.product} {port.version}"))

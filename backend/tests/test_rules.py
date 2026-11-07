@@ -131,32 +131,45 @@ class TestRules(unittest.TestCase):
 
     def test_mini_httpd_and_tomcat_are_not_apache_httpd(self):
         """mini_httpd and Apache Tomcat are not Apache httpd and must not trigger OUTDATED_SERVICE."""
-        self.assertFalse(is_outdated_service("http", "mini_httpd", "1.19"))
-        self.assertFalse(is_outdated_service("http", "Apache Tomcat", "2.1"))
+        self.assertFalse(is_outdated_service("mini_httpd", "1.19"))
+        self.assertFalse(is_outdated_service("Apache Tomcat", "2.1"))
+
+    def test_outdated_requires_a_conclusive_version(self):
+        cases = [
+            ("Samba smbd", "3.X - 4.X", False), ("Samba smbd", "3.0–4.1", False),
+            ("Samba smbd", "3.X or newer", False), ("Samba smbd", "3.0 - 3.6", True),
+            ("Samba smbd", "3.X", True), ("OpenSSH", "7.X", False),
+            ("OpenSSH", "6.9-7.3", True), ("OpenSSH", "7.2 to 7.4", False),
+            ("vsftpd", "2.3.4.1", False), ("vsftpd", "2.3.4-1ubuntu1", True),
+            ("Apache httpd", "unknown build 2.2", False), ("Apache httpd", "2.2.x", True),
+        ]
+        for product, version, expected in cases:
+            with self.subTest(product=product, version=version):
+                self.assertEqual(is_outdated_service(product, version), expected)
 
     def test_outdated_versions_detection(self):
         """Validates the official list of outdated versions."""
         # vsftpd 2.3.4
-        self.assertTrue(is_outdated_service("ftp", "vsftpd", "2.3.4"))
-        self.assertFalse(is_outdated_service("ftp", "vsftpd", "3.0.3"))
+        self.assertTrue(is_outdated_service("vsftpd", "2.3.4"))
+        self.assertFalse(is_outdated_service("vsftpd", "3.0.3"))
 
         # OpenSSH < 7.4
-        self.assertTrue(is_outdated_service("ssh", "OpenSSH", "6.6.1p1"))
-        self.assertTrue(is_outdated_service("ssh", "OpenSSH", "7.2p2 Ubuntu-4"))
-        self.assertFalse(is_outdated_service("ssh", "OpenSSH", "7.4"))
-        self.assertFalse(is_outdated_service("ssh", "OpenSSH", "8.4p1 Debian 5+deb11u3"))
+        self.assertTrue(is_outdated_service("OpenSSH", "6.6.1p1"))
+        self.assertTrue(is_outdated_service("OpenSSH", "7.2p2 Ubuntu-4"))
+        self.assertFalse(is_outdated_service("OpenSSH", "7.4"))
+        self.assertFalse(is_outdated_service("OpenSSH", "8.4p1 Debian 5+deb11u3"))
 
         # Apache httpd <= 2.2.x
-        self.assertTrue(is_outdated_service("http", "Apache httpd", "2.2.34"))
-        self.assertFalse(is_outdated_service("http", "Apache httpd", "2.4.52"))
+        self.assertTrue(is_outdated_service("Apache httpd", "2.2.34"))
+        self.assertFalse(is_outdated_service("Apache httpd", "2.4.52"))
 
         # Microsoft IIS <= 7.5
-        self.assertTrue(is_outdated_service("http", "Microsoft IIS", "7.5"))
-        self.assertFalse(is_outdated_service("http", "Microsoft-IIS", "10.0"))
+        self.assertTrue(is_outdated_service("Microsoft IIS", "7.5"))
+        self.assertFalse(is_outdated_service("Microsoft-IIS", "10.0"))
 
         # Samba <= 3.x
-        self.assertTrue(is_outdated_service("netbios-ssn", "Samba smbd", "3.0.24"))
-        self.assertFalse(is_outdated_service("microsoft-ds", "Samba smbd", "4.15"))
+        self.assertTrue(is_outdated_service("Samba smbd", "3.0.24"))
+        self.assertFalse(is_outdated_service("Samba smbd", "4.15"))
 
 
 if __name__ == "__main__":
