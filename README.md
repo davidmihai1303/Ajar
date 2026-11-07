@@ -401,4 +401,4 @@ Details: [`lab/README.md`](lab/README.md).
 | Explanations RO/EN | scaffold |
 | History + diff | scaffold |
 | API + frontend | scaffold |
-| Optional LLM (grounded personalisation + Q&A, 31 tests) | done, API wiring pending |
+| Optional LLM (grounded personalisation + Q&A, 37 tests) | done, API wiring pending |

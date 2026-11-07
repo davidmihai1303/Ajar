@@ -21,6 +21,17 @@ Privacy (NFR-02): if the endpoint is not on this machine or the local network, n
 unless LLM_ALLOW_REMOTE=1, and even then hostnames are never sent.
 
 Target backend: the llama-server on the MSI (OpenAI-compatible, http://127.0.0.1:8080/v1).
+
+Integration contract (for api/ and explain/static.py)
+    * Create ONE client at startup: `LLM = LLMClient.from_config()` (it holds the cache).
+    * explain/static.py returns `StaticText(explanation, fixes)` for (code, lang[, context]).
+    * api/ builds `EvidenceFinding` / `EvidenceDevice` / `ScanEvidence` from the analysis models.
+      Never put MAC addresses in them.
+    * Personalise lazily: only for the finding the user opens, not for every finding of a scan
+      (a 27B model over RPC can take several seconds per call). Always show the static text first.
+    * `GET /api/llm/status` -> `LLM.available()` so the UI can show whether the AI assistant is on.
+    * `POST /api/ask {question, scan_id, lang}` -> `ask(LLM, question, evidence, lang)`;
+      return `text`, `source`, `grounded`. `problems` is for logs only, not for the UI.
 """
 from __future__ import annotations
 
@@ -154,15 +165,19 @@ def _finding_dict(f: EvidenceFinding, include_hostnames: bool) -> dict:
 # --------------------------------------------------------------------------- grounding check
 
 _IP_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])")
+_PORT_LIST_RE = re.compile(
+    r"(?i)\bport(?:ul|urile|ului|urilor|s)?\s*(?:nr\.?\s*)?"
+    r"(\d{1,5}(?:\s*(?:,|/|și|si|and|or|sau)\s*\d{1,5})*)\b")
 _PORT_RE = re.compile(
-    r"(?i)\b(?:port(?:ul|urile|ului|s)?|portul|porturile)\s*(?:nr\.?\s*)?(\d{1,5})\b"
-    r"|\b\d{1,3}(?:\.\d{1,3}){3}:(\d{1,5})\b"
+    r"\b\d{1,3}(?:\.\d{1,3}){3}:(\d{1,5})\b"
     r"|(?<![\d.]):(\d{2,5})\b"
     r"|\b(\d{1,5})\s*/\s*(?:tcp|udp)\b")
+_NUM_RE = re.compile(r"\d{1,5}")
 _CVE_RE = re.compile(r"(?i)\bCVE-\d{4}-\d{3,}\b")
 _PHONE_RE = re.compile(r"(?<![\w.])\+?\d(?:[ \-]?\d){8,}(?![\d.]\d)(?!\d)")
 _URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
 _SENTENCE_END = re.compile(r"[.!?…]+(?:\s|$)")
+_ABBREVIATIONS = re.compile(r"(?i)\b(?:de ex|ex|e\.g|i\.e|etc|nr|dvs|aprox|vs|max|min)\.(?=\s)")
 
 
 def allowed_values(evidence: ScanEvidence) -> tuple:
@@ -178,17 +193,32 @@ def allowed_values(evidence: ScanEvidence) -> tuple:
     return ips, ports
 
 
-def find_ungrounded(text: str, evidence: ScanEvidence) -> list:
-    """Return a list of problems; empty list = every concrete fact is backed by the scan."""
+def _mentioned_ports(text: str) -> list:
+    ports: list = []
+    for m in _PORT_LIST_RE.finditer(text):
+        ports += [int(n) for n in _NUM_RE.findall(m.group(1))]
+    for m in _PORT_RE.finditer(text):
+        ports.append(int(next(g for g in m.groups() if g)))
+    return ports
+
+
+def find_ungrounded(text: str, evidence: ScanEvidence, trusted: str = "") -> list:
+    """Return a list of problems; empty list = every concrete fact is backed by the scan.
+
+    `trusted` is our own built-in text (explain/static.py): IPs and ports it mentions are allowed too,
+    so a faithful rephrasing of "use SSH (port 22) instead" is not rejected.
+    """
     ips, ports = allowed_values(evidence)
+    if trusted:
+        ips |= set(_IP_RE.findall(trusted))
+        ports |= set(_mentioned_ports(trusted))
     problems: list = []
     for ip in _IP_RE.findall(text):
         if ip not in ips:
             problems.append(f"invented IP {ip}")
-    for m in _PORT_RE.finditer(text):
-        num: str = next(g for g in m.groups() if g)
-        if int(num) not in ports:
-            problems.append(f"invented port {num}")
+    for port in _mentioned_ports(text):
+        if port not in ports:
+            problems.append(f"invented port {port}")
     for cve in _CVE_RE.findall(text):
         problems.append(f"CVE not in scan {cve}")
     for phone in _PHONE_RE.findall(text):
@@ -197,11 +227,11 @@ def find_ungrounded(text: str, evidence: ScanEvidence) -> list:
         host: str = urlparse(url if "://" in url else "http://" + url).hostname or ""
         if host not in ips:
             problems.append(f"external link {url}")
-    return problems
+    return sorted(set(problems))
 
 
 def count_sentences(text: str) -> int:
-    stripped: str = text.strip()
+    stripped: str = _ABBREVIATIONS.sub(lambda m: m.group(0)[:-1], text.strip())
     if not stripped:
         return 0
     n: int = len(_SENTENCE_END.findall(stripped))
@@ -383,7 +413,8 @@ def personalize(client: LLMClient, finding: EvidenceFinding, base: StaticText,
         problems.append("explanation longer than 2 sentences")
     if not 1 <= len(fixes) <= 5:
         problems.append(f"{len(fixes)} fix steps (allowed 1-5)")
-    problems += find_ungrounded(" ".join([explanation, *fixes]), evidence)
+    problems += find_ungrounded(" ".join([explanation, *fixes]), evidence,
+                                trusted=" ".join([base.explanation, *base.fixes]))
     if problems:
         static.problems = problems
         return static

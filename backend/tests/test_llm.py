@@ -170,3 +170,27 @@ def test_requests_are_deterministic_and_cached() -> None:
     b = personalize(client, PRINTER, BASE, "en")
     assert a.explanation == b.explanation and len(seen) == 1
     assert seen[0]["temperature"] == 0
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_ports_from_our_static_text_are_allowed() -> None:
+    telnet = EvidenceFinding(code="TELNET_OPEN", severity="high", ip="192.168.1.1", port=23,
+                             protocol="tcp", service="telnet")
+    base = StaticText("Telnet sends everything unencrypted.", ("Turn off Telnet.", "Use SSH (port 22) instead."))
+    out = json.dumps({"explanation": "Your router sends logins unencrypted.",
+                      "fixes": ["Turn off Telnet in the router settings.", "Use SSH (port 22) instead."]})
+    r = personalize(fake_llm(out), telnet, base, "en")
+    assert r.source == "llm", r.problems
+
+
+def test_abbreviations_do_not_count_as_sentences() -> None:
+    assert llm.count_sentences("Versiunea 1.6 e veche, de ex. pe routerul tău. Oprește-o.") == 2
+    assert llm.count_sentences("Old software, e.g. on the router. Update it.") == 2
+
+
+@pytest.mark.parametrize("text", ["Porturile 22 și 3389 sunt deschise.", "Ports 9100, 3389 are open.",
+                                  "ports 9100 or 3389", "port 9100/3389"])
+def test_every_port_in_a_list_is_checked(text: str) -> None:
+    problems = find_ungrounded(text, EVIDENCE)
+    assert any("3389" in p for p in problems), problems
