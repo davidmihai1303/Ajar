@@ -11,7 +11,7 @@ import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
 import FindingCard from "../components/FindingCard";
-import { DeviceIcon, IconAsk, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
+import { DeviceIcon, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
 import ScoreBadge, { SeverityBadge } from "../components/ScoreBadge";
 
 const readOpen = () => {
@@ -276,21 +276,6 @@ export default function Dashboard() {
               </p>
             )}
             <div className="row wrap gap-m">
-              <a
-                className="button"
-                href={href({
-                  name: "ask",
-                  query: t("finding.rephraseQuestion", {
-                    code: finding.code,
-                    device: deviceName(first.device.device_type),
-                    ip: first.device.ip,
-                  }),
-                })}
-                title={t("dashboard.askAi")}
-              >
-                <IconAsk />
-                {t("dashboard.askAi")}
-              </a>
               <button
                 type="button"
                 className="button"

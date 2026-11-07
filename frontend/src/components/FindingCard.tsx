@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Device, Explanation, Finding } from "../api/proposedTypes";
+import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
-import { DeviceIcon, IconAsk, IconRefresh } from "./Icons";
+import { DeviceIcon, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
 export default function FindingCard({
@@ -22,6 +23,7 @@ export default function FindingCard({
   onRescan?: () => void;
 }) {
   const { t, lang, scan, aiConsent } = useApp();
+  const isMobile = useIsMobile();
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
   const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off" | "noAnswer">("idle");
@@ -73,12 +75,6 @@ export default function FindingCard({
     }
   };
 
-  const askPrompt = t("finding.rephraseQuestion", {
-    code: finding.code,
-    device: deviceName,
-    ip: finding.ip,
-  });
-
   return (
     <article className={`card finding${finding.severity === "high" ? " finding-high" : ""}`}>
       {showDevice && device && (
@@ -110,22 +106,20 @@ export default function FindingCard({
       )}
       <div className="finding-footer">
         <div className="row wrap gap-m">
-          <a className="button" href={href({ name: "ask", query: askPrompt })} title={t("dashboard.askAi")}>
-            <IconAsk />
-            {t("dashboard.askAi")}
-          </a>
           {onRescan && (
             <button type="button" className="button" onClick={onRescan} title={t("dashboard.rescanNote")}>
               <IconRefresh />
               {t("dashboard.rescan")}
             </button>
           )}
-          <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
-            {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
-          </button>
+          {!isMobile && (
+            <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
+              {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
+            </button>
+          )}
         </div>
-        {rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
-        {rephraseState === "noAnswer" && <span className="muted">{t("ask.cannotAnswer")}</span>}
+        {!isMobile && rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
+        {!isMobile && rephraseState === "noAnswer" && <span className="muted">{t("ask.cannotAnswer")}</span>}
         <details className="tech">
           <summary>{t("common.technical")}</summary>
           <p className="mono">

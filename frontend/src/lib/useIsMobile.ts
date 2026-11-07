@@ -10,7 +10,10 @@ export function useIsMobile(breakpoint = 768): boolean {
     const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
       navigator.userAgent
     );
-    return isSmall || isMobileUA;
+    const hasParam =
+      window.location.search.toLowerCase().includes("mobile") ||
+      window.location.hash.toLowerCase().includes("mobile");
+    return isSmall || isMobileUA || hasParam;
   });
 
   useEffect(() => {
@@ -19,10 +22,17 @@ export function useIsMobile(breakpoint = 768): boolean {
       const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
         navigator.userAgent
       );
-      setIsMobile(isSmall || isMobileUA);
+      const hasParam =
+        window.location.search.toLowerCase().includes("mobile") ||
+        window.location.hash.toLowerCase().includes("mobile");
+      setIsMobile(isSmall || isMobileUA || hasParam);
     };
     window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
+    window.addEventListener("hashchange", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      window.removeEventListener("hashchange", check);
+    };
   }, [breakpoint]);
 
   return isMobile;
