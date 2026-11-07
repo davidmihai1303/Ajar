@@ -144,7 +144,8 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
   transition: transform 0.8s cubic-bezier(0.65, 0, 0.25, 1);
   display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.ajar-dock.place-dialog { transform: translate(calc(50vw - 240px - var(--ajar-w) - 40px), calc(50vh - 150px)); }
+.ajar-dock { transform-origin: top left; }
+.ajar-dock.place-dialog { transform: translate(calc(50vw - 240px - var(--ajar-w) * 1.2 - 32px), calc(50vh - 170px)) scale(1.2); }
 .ajar-dock.place-center { transform: translate(calc(50vw - var(--ajar-w) / 2), calc(50vh - 290px)); }
 .ajar-dock-button { border: 0; background: transparent; padding: 0; width: 100%; cursor: pointer; border-radius: 16px; }
 .ajar-score { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 58px; }
