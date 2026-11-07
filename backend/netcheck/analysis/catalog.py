@@ -1,4 +1,5 @@
 """Official finding catalog as DATA: code -> severity, points, matching services. Single source of truth."""
+import re
 from dataclasses import dataclass
 
 
@@ -20,6 +21,7 @@ HTTP_ADMIN_KEYWORDS: tuple[str, ...] = (
     "router",
     "settings",
 )
+HTTP_ADMIN_TITLE = re.compile("|".join(map(re.escape, HTTP_ADMIN_KEYWORDS)), re.IGNORECASE | re.ASCII)
 
 CATALOG: dict[str, CatalogEntry] = {
     "TELNET_OPEN": CatalogEntry(

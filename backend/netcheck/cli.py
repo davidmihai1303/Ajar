@@ -1,21 +1,17 @@
 """Offline scan analysis commands for the folder export and single-file jury check.
 
-  netcheck analyze <folder|file.xml> [--out DIR]   -> DIR/findings.csv + DIR/scores.csv
-  netcheck analyze-file <file.xml>                  -> readable findings + score of one file
+  netcheck analyze <folder> [--out DIR]     -> folder export
+  netcheck analyze <file.xml> --out DIR    -> one-file CSV export
+  netcheck analyze-file <file.xml>         -> readable findings and score
 
-User-facing text is printed in Romanian and English (AGENTS.md: everything the user sees is
-bilingual), Romanian first. Scan text and scan file names shown on screen are
-MAC-masked. The CSV keeps the real file name so it matches the jury's answer key
-(see analysis.export.export_folder). Output paths chosen by the user are printed as they are:
-masking them would print a path that does not exist (e.g. a folder whose name has 12 hex digits).
+The terminal summary uses the privacy-aware file labels written to the CSVs.
 """
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 from netcheck import config
-from netcheck.analysis.export import analyze_file, export_folder
+from netcheck.analysis.export import analyze_file, export_scans, single_file_label
 from netcheck.analysis.models import ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE
 from netcheck.analysis.privacy import mask_macs_in_text
 
@@ -39,10 +35,7 @@ def _reason(error: str) -> str:
     return _text(ro, en)
 
 
-def _print_summary(scores_csv: str) -> None:
-    """One line per scan file: masked name and score (or ERROR)."""
-    with open(scores_csv, encoding="utf-8", newline="") as fh:
-        rows = [(mask_macs_in_text(name), score) for name, score in list(csv.reader(fh))[1:]]
+def _print_summary(rows: list[tuple[str, str]]) -> None:
     width = max((len(name) for name, _ in rows), default=0)
     for name, score in rows:
         print(f"  {name:<{width}}  {score:>5}")
@@ -54,30 +47,32 @@ def main(argv: list[str] | None = None) -> int:
     folder = subparsers.add_parser("analyze", help=_text("Analizează un dosar sau un fișier XML",
                                                          "Analyze a folder of XML scans or one XML file"))
     folder.add_argument("folder", type=Path)
-    folder.add_argument("--out", "-o", type=Path, help=_text("Dosarul pentru CSV", "Directory for CSV output"))
+    folder.add_argument("--out", "-o", type=Path,
+                        help=_text("Dosarul CSV (obligatoriu pentru un fișier)",
+                                   "CSV output directory (required for a single file)"))
     single = subparsers.add_parser("analyze-file", help=_text("Analizează un fișier XML", "Analyze one XML scan"))
     single.add_argument("file", type=Path)
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        default_out = args.folder.parent if args.folder.is_file() else args.folder
         try:
-            paths = export_folder(args.folder, args.out or default_out, max_bytes=config.MAX_XML_BYTES)
+            paths, rows = export_scans(args.folder, args.out, max_bytes=config.MAX_XML_BYTES)
         except OSError as exc:
             print(_text("Eroare la export", "Export failed"), mask_macs_in_text(str(exc)), file=sys.stderr)
             return 1
-        _print_summary(paths[1])
+        _print_summary(rows)
         for path in paths:
-            print(path)
+            print(path if mask_macs_in_text(path) == path else Path(path).name)
         return 0
 
     scan, findings, score = analyze_file(args.file, max_bytes=config.MAX_XML_BYTES)
+    label = single_file_label(args.file, scan.file, max_bytes=config.MAX_XML_BYTES)
     if not scan.ok:
-        print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), scan.file,
+        print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), label,
               file=sys.stderr)
         print(f"  {_reason(scan.error)}", file=sys.stderr)
         return 1
-    print(f"{_text('Fișier', 'File')}: {scan.file}")
+    print(f"{_text('Fișier', 'File')}: {label}")
     print(f"{_text('Scor', 'Score')}: {score}")
     print(f"{_text('Constatări', 'Findings')}: {len(findings)}")
     for finding in findings:

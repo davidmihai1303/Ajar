@@ -2,7 +2,8 @@
 import csv
 from pathlib import Path
 
-from netcheck import config
+from netcheck import cli, config
+from netcheck.analysis import export
 from netcheck.cli import main
 
 FIXTURES = Path(__file__).parent / "fixtures" / "validation"
@@ -12,6 +13,52 @@ def test_public_csvs_match_byte_for_byte(tmp_path):
     assert main(["analyze", str(FIXTURES), "--out", str(tmp_path)]) == 0
     for name in ("findings.csv", "scores.csv"):
         assert (tmp_path / name).read_bytes() == (FIXTURES / f"expected_{name}").read_bytes()
+
+
+def csv_rows(path):
+    with path.open(encoding="utf-8", newline="") as data:
+        return list(csv.DictReader(data))
+
+
+def test_single_file_export_preserves_full_results_and_matches_its_rows(tmp_path, capsys):
+    for name in ("V1_home_basic.xml", "V4_legacy.xml", "V7_broken.xml"):
+        (tmp_path / name.replace(".xml", ".XML")).write_bytes((FIXTURES / name).read_bytes())
+    assert main(["analyze", str(tmp_path)]) == 0
+    originals = {p.name: p.read_bytes() for p in tmp_path.glob("*.csv")}
+    for scan in tmp_path.glob("*.XML"):
+        assert main(["analyze", str(scan)]) == 1
+        assert "--out" in capsys.readouterr().err
+        out = tmp_path / "rerun"
+        assert main(["analyze", str(scan), "--out", str(out)]) == 0
+        for name, data in originals.items():
+            assert (tmp_path / name).read_bytes() == data
+            expected = [row for row in csv_rows(tmp_path / name) if row["file"] == scan.name]
+            assert csv_rows(out / name) == expected
+
+
+def test_csv_input_is_rejected_before_any_output_changes(tmp_path, capsys):
+    assert main(["analyze", str(FIXTURES), "--out", str(tmp_path)]) == 0
+    originals = {p: p.read_bytes() for p in tmp_path.glob("*.csv")}
+    for path in originals:
+        assert main(["analyze", str(path)]) == 1
+        assert ".xml" in capsys.readouterr().err
+        out = tmp_path / "elsewhere"
+        assert main(["analyze", str(path), "--out", str(out)]) == 1
+        assert not out.exists()
+    assert all(path.read_bytes() == data for path, data in originals.items())
+
+
+def test_summary_belongs_to_the_run_that_prints_it(tmp_path, capsys, monkeypatch):
+    def export_then_publish_again(*args, **kwargs):
+        first = export.export_scans(*args, **kwargs)
+        export.export_folder(FIXTURES / "V1_home_basic.xml", tmp_path)
+        return first
+
+    monkeypatch.setattr(cli, "export_scans", export_then_publish_again)
+    assert main(["analyze", str(FIXTURES / "V4_legacy.xml"), "--out", str(tmp_path)]) == 0
+    summary = capsys.readouterr().out.splitlines()[0]
+    assert summary.split() == ["V4_legacy.xml", "25"]
+    assert csv_rows(tmp_path / "scores.csv") == [{"file": "V1_home_basic.xml", "network_score": "90"}]
 
 
 def test_missing_input_fails_before_creating_output(tmp_path):
@@ -61,36 +108,77 @@ def test_cli_masks_mac_in_filenames_even_on_errors(tmp_path, capsys):
     assert main(["analyze-file", str(path)]) == 1
     assert "D8:43:AE:xx:xx:xx" in capsys.readouterr().err
     assert main(["analyze", str(tmp_path)]) == 0
-    # The CSV keeps the real file name so it matches the jury's answer key (see export.export_folder).
-    assert "printer-D8-43-AE-2E-C3-6D.xml,ERROR" in (tmp_path / "scores.csv").read_text()
-    assert "D8-43-AE-2E-C3-6D" not in capsys.readouterr().out
+    assert "printer-D8:43:AE:xx:xx:xx.xml,ERROR" in (tmp_path / "scores.csv").read_text()
 
 
-def read_rows(path: Path) -> list:
-    with path.open(encoding="utf-8", newline="") as fh:
-        return list(csv.reader(fh))
+def test_timestamp_and_mac_filenames_in_both_csvs_and_single_file_cli(tmp_path, capsys):
+    original = (FIXTURES / "V1_home_basic.xml").read_bytes()
+    with_mac = original.replace(b"50:C7:BF:39:0C:8C", b"20:26:11:08:12:00")
+    inputs = [
+        ("T5_202611081200.xml", original, "T5_202611081200.xml"),
+        ("printer-D843AE2EC36D.xml", original, "printer-D8:43:AE:xx:xx:xx.xml"),
+        ("router-202611081200.xml", with_mac, "router-20:26:11:xx:xx:xx (2).xml"),
+        ("router-202611081201.xml", original, "router-202611081201.xml"),
+        ("router-20-26-11-08-12-02.xml", original, "router-20:26:11:xx:xx:xx.xml"),
+        ("mac-202611081200.xml", original, "mac-20:26:11:xx:xx:xx.xml"),
+    ]
+    for raw, data, _ in inputs:
+        (tmp_path / raw).write_bytes(data)
+    out = tmp_path / "results-D8-43-AE-2E-C3-6D"
+    assert main(["analyze", str(tmp_path), "--out", str(out)]) == 0
+    expected = {label for _, _, label in inputs}
+    for name in ("scores.csv", "findings.csv"):
+        assert {row["file"] for row in csv_rows(out / name)} == expected
+    terminal = capsys.readouterr().out
+    assert "D8-43-AE-2E-C3-6D" not in terminal
+    lines = terminal.splitlines()
+    assert lines[-2:] == ["findings.csv", "scores.csv"]
+    assert [line.rsplit(maxsplit=1)[0].strip() for line in lines[:-2]] == sorted(expected)
+    for raw, _, label in inputs:
+        assert main(["analyze-file", str(tmp_path / raw)]) == 0
+        assert capsys.readouterr().out.splitlines()[0].endswith(" " + label)
 
 
-def test_csv_keeps_the_real_file_name_even_when_it_looks_like_a_mac(tmp_path):
-    """A Test Set name with 12 hex digits must reach the CSV unchanged, or its rows miss the key."""
-    names = ["T1_home.xml", "T5_202611081200.xml", "capture-0123456789ab.xml", "scan_aabbccddeeff.xml"]
-    source = tmp_path / "in"
-    source.mkdir()
-    for name in names:
-        (source / name).write_bytes((FIXTURES / "V1_home_basic.xml").read_bytes())
-    (source / "broken_aabbccddeeff.xml").write_bytes((FIXTURES / "V7_broken.xml").read_bytes())
+def test_changed_mac_evidence_cannot_publish_a_stale_filename(tmp_path, monkeypatch):
+    assert main(["analyze", str(tmp_path)]) == 0
+    path = tmp_path / "T5_202611081200.xml"
+    path.write_text("<nmaprun/>")
+    analyze = export.analyze_file
 
-    assert main(["analyze", str(source), "--out", str(tmp_path / "out")]) == 0
-    scores = read_rows(tmp_path / "out" / "scores.csv")[1:]
-    assert [row[0] for row in scores] == sorted(names + ["broken_aabbccddeeff.xml"])
-    assert dict(scores)["broken_aabbccddeeff.xml"] == "ERROR"
-    assert {row[0] for row in read_rows(tmp_path / "out" / "findings.csv")[1:]} == set(names)
+    def replace_before_analysis(path, max_bytes):
+        path.write_text('<nmaprun><host><address addrtype="mac" addr="20:26:11:08:12:00"/></host></nmaprun>')
+        return analyze(path, max_bytes)
+
+    monkeypatch.setattr(export, "analyze_file", replace_before_analysis)
+    assert main(["analyze", str(tmp_path)]) == 1
+    for name in ("findings.csv", "scores.csv"):
+        assert len((tmp_path / name).read_text().splitlines()) == 1
 
 
-def test_analyze_accepts_a_single_file_for_the_live_rerun(tmp_path):
-    """Live check #1: one Test Set file re-run gives exactly its rows of the full upload."""
-    assert main(["analyze", str(FIXTURES), "--out", str(tmp_path / "all")]) == 0
-    assert main(["analyze", str(FIXTURES / "V4_legacy.xml"), "--out", str(tmp_path / "one")]) == 0
-    expected = [row for row in read_rows(tmp_path / "all" / "findings.csv")[1:] if row[0] == "V4_legacy.xml"]
-    assert read_rows(tmp_path / "one" / "findings.csv")[1:] == expected
-    assert read_rows(tmp_path / "one" / "scores.csv") == [["file", "network_score"], ["V4_legacy.xml", "25"]]
+def test_masked_name_collisions_match_across_csvs_and_single_file_cli(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "DEFAULT_LANG", "en")
+    stem = "scan-02:00:00:xx:xx:xx"
+    inputs = [
+        ("scan-02-00-00-00-00-02.xml", "V3_small_office.xml", f"{stem} (3).xml", "45"),
+        ("scan-02-00-00-00-00-01 (2).xml", "V7_broken.xml", f"{stem} (2).xml", "ERROR"),
+        ("scan-02-00-00-00-00-01.xml", "V1_home_basic.xml", f"{stem}.xml", "90"),
+    ]
+    for raw, fixture, _, _ in inputs:
+        (tmp_path / raw).write_bytes((FIXTURES / fixture).read_bytes())
+    for _ in range(2):
+        assert main(["analyze", str(tmp_path)]) == 0
+        with (tmp_path / "scores.csv").open(newline="") as f:
+            assert list(csv.reader(f))[1:] == sorted([[label, score] for _, _, label, score in inputs])
+        with (tmp_path / "findings.csv").open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert {row["file"] for row in rows} == {inputs[0][2], inputs[2][2]}
+        assert all(row["file"] == inputs[2][2] for row in rows if row["finding_code"] == "HTTP_ADMIN_CLEARTEXT")
+    capsys.readouterr()
+    for raw, _, label, score in inputs:
+        assert main(["analyze-file", str(tmp_path / raw)]) == (1 if score == "ERROR" else 0)
+        result = capsys.readouterr()
+        assert label in (result.err if score == "ERROR" else result.out)
+        out = tmp_path / "one"
+        assert main(["analyze", str(tmp_path / raw), "--out", str(out)]) == 0
+        for name in ("scores.csv", "findings.csv"):
+            assert csv_rows(out / name) == [row for row in csv_rows(tmp_path / name) if row["file"] == label]

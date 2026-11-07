@@ -3,7 +3,7 @@ import ipaddress
 from collections import defaultdict
 from collections.abc import Iterable
 
-from .catalog import CATALOG, HTTP_ADMIN_KEYWORDS, CatalogEntry
+from .catalog import CATALOG, HTTP_ADMIN_TITLE, CatalogEntry
 from .models import Device, Finding, Port
 from .versions import is_outdated_service
 
@@ -30,7 +30,7 @@ def _findings_for_ip(ip: str, devices: list[Device]) -> list[Finding]:
             if entry.code == "SMB_EXPOSED":
                 smb_ports.append(port)
             elif entry.code == "HTTP_ADMIN_CLEARTEXT":
-                if port.tunnel.lower() != "ssl" and any(word in port.http_title.lower() for word in HTTP_ADMIN_KEYWORDS):
+                if port.tunnel.lower() != "ssl" and HTTP_ADMIN_TITLE.search(port.http_title):
                     findings.setdefault((port.port, entry.code),
                                         _port_finding(ip, port, entry, f"{evidence}: {port.http_title}"))
             else:

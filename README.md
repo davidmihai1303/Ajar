@@ -221,7 +221,12 @@ docker compose run --rm app netcheck analyze /data/input/test_set --out /data/in
 ```
 
 An unreadable file gets `ERROR` in `scores.csv`, and the other files are still processed.
-The `file` column always holds the real file name, exactly as in the Test Set.
+The CSVs and terminal summary preserve timestamp filenames and mask MAC addresses.
+If masking gives two scans the same filename, the exporter adds a number before the extension.
+Single-file reruns use the same label as the folder export.
+
+A single-file CSV rerun requires an explicit `--out`. Choose a separate directory to keep the
+full folder results. For a read-only rerun, use `netcheck analyze-file`.
 
 Without Docker (e.g. as a fallback for the live checks):
 
@@ -231,6 +236,12 @@ netcheck analyze ../input/test_set --out ../input/test_set/results   # whole fol
 netcheck analyze ../input/test_set/T3.xml --out /tmp/rerun           # live check #1: one file → its rows
 netcheck analyze-file ../input/test_set/T3.xml                       # readable findings + score (RO / EN)
 ```
+
+The output filesystem must support symbolic links. Both CSV names point into the local
+`.netcheck-csv` directory so one switch publishes the complete pair. A successful export removes
+the previous CSVs. If the process is killed, rerun the export before sharing the folder to clear
+any interrupted work. To move standalone CSVs
+to another drive, copy their contents (for example, `cp -L findings.csv scores.csv /path/to/destination/`).
 
 ### Live scan
 
