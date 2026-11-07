@@ -10,3 +10,6 @@ LLM_BASE_URL: str = os.environ.get("LLM_BASE_URL", "")
 LLM_API_KEY: str = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL: str = os.environ.get("LLM_MODEL", "")
 MAX_XML_BYTES: int = int(os.environ.get("NETCHECK_MAX_XML_BYTES", str(20 * 1024 * 1024)))
+LLM_TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "60"))
+# Hostnames and device details never leave this machine/LAN unless explicitly allowed.
+LLM_ALLOW_REMOTE: bool = os.environ.get("LLM_ALLOW_REMOTE", "0") == "1"

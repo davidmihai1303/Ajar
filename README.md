@@ -280,6 +280,14 @@ byte-for-byte reproducible.
 
   It never invents ports, CVEs or phone numbers, and never changes findings or scores (NFR-06).
   If it is off or slow, the built-in texts are shown.
+- **How grounding is enforced** (`explain/llm.py`):
+  1. The model gets only a JSON evidence block from the scan. Banners, titles and hostnames are
+     cleaned, truncated and marked as untrusted data, so text on the network cannot inject instructions.
+  2. Every output is checked: any IP, port, CVE ID, phone number or link that is not in the scan,
+     more than 2 sentences, or 0 / more than 5 fix steps → the output is rejected and the built-in text is shown.
+  3. `temperature 0`, fixed seed and a cache make the same question give the same answer.
+  4. A non-local endpoint is disabled unless `LLM_ALLOW_REMOTE=1`; hostnames are never sent to it.
+- **Try it against the real model:** `docker compose run --rm app python -m netcheck.explain.smoke`
 
 ---
 
@@ -322,6 +330,7 @@ docker compose run --rm app pytest -q
 | `test_history.py` | V6a → V6b shows 3 resolved findings although MACs changed |
 | `test_lab.py` | Our lab: before → 0, after → 75 |
 | `test_determinism.py` | Same file three times → identical output |
+| `test_llm.py` | Grounding check, fallbacks, prompt injection, privacy, determinism of the LLM layer |
 
 ---
 
@@ -392,4 +401,4 @@ Details: [`lab/README.md`](lab/README.md).
 | Explanations RO/EN | scaffold |
 | History + diff | scaffold |
 | API + frontend | scaffold |
-| Optional LLM | scaffold |
+| Optional LLM (grounded personalisation + Q&A, 31 tests) | done, API wiring pending |
