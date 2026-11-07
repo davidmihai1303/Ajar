@@ -1,5 +1,6 @@
 import csv
 import json
+import sqlite3
 from pathlib import Path
 
 import httpx
@@ -66,6 +67,23 @@ def test_public_validation_through_http(setup):
         assert client.delete("/api/history").status_code == 204
         assert client.delete("/api/history").content == b""
         assert client.get("/api/scans/" + params["from"]).status_code == 404
+
+
+def test_previous_database_preserves_scan_with_only_a_score(setup, tmp_path):
+    app, _, _ = setup
+    with TestClient(app(), base_url="http://localhost") as client:
+        assert client.get("/api/history").json() == []
+    with sqlite3.connect(tmp_path / "db") as conn:
+        conn.execute("DROP TABLE scan_origin")
+        conn.execute("PRAGMA user_version = 4")
+        conn.execute("""INSERT INTO scans(scan_id, created_at, score, findings_available)
+                        VALUES ('legacy', '2025-01-01T00:00:00+00:00', 85, 0)""")
+    with TestClient(app(), base_url="http://localhost") as client:
+        for record in [client.get("/api/history").json()[0], client.get("/api/scans/legacy").json()]:
+            assert record["file"] == "legacy" and record["score"] == 85
+            assert record["source"] == "unknown" and record["network_id"] is None
+            assert not record["findings_available"]
+        assert client.get("/api/history/diff", params={"from": "legacy", "to": "legacy"}).status_code == 409
 
 
 def test_scans_require_matching_confirmation(setup):

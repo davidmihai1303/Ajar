@@ -55,7 +55,7 @@ def detail(scan_id: str, request: Request) -> api.Scan:
 
 @router.get("/history")
 def history(request: Request) -> list[api.HistoryItem]:
-    return [api.HistoryItem(**{**row, "id": row["scan_id"], "file": mask_scan_filename(row["file_name"]),
+    return [api.HistoryItem(**{**row, "id": row["scan_id"], "file": mask_scan_filename(row["file_name"] or row["scan_id"]),
                                "source": row["source"] or "unknown", "ssid": clean(row["ssid"]),
                                "findings_available": row["findings_available"] and not row["error"]})
             for row in list_scans(request.app.state.db)]

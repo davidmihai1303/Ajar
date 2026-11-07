@@ -130,7 +130,6 @@ class AskRequest(Input):
     lang: Lang = "ro"
 
 
-
 class Answer(BaseModel):
     available: bool
     can_answer: bool

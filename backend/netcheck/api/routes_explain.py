@@ -21,8 +21,8 @@ def evidence(scan: api.Scan) -> ScanEvidence:
         d = devices.get(f.ip)
         p = endpoints.get((f.ip, f.port, f.protocol))
         findings.append(EvidenceFinding(f.code, f.severity, f.ip, f.port, f.protocol or "",
-            service=p.service or "" if p else "", device_type=d.device_type if d else "",
-            vendor=d.vendor or "" if d else "", hostname=d.hostname or "" if d else ""))
+            service=(p.service or "") if p else "", device_type=d.device_type if d else "",
+            vendor=(d.vendor or "") if d else "", hostname=(d.hostname or "") if d else ""))
     # Product banners, titles, MACs and script outputs are not model inputs.
     inventory = tuple(EvidenceDevice(d.ip, d.vendor or "", d.hostname or "", d.device_type,
                       tuple(EvidencePort(p.port, p.protocol, p.service or "") for p in d.ports))
