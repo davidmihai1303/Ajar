@@ -1,7 +1,7 @@
 // Before → after between two scans (compared by IP). Shows only what actually changed.
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { Explanation, ScanDiff } from "../api/proposedTypes";
+import type { Explanation, ScanDiff } from "../api/types";
 import { useApp } from "../state/AppState";
 
 export default function DiffList({ diff, showScore = true }: { diff: ScanDiff; showScore?: boolean }) {

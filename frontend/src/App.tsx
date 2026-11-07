@@ -1,6 +1,8 @@
 // Layout + simple navigation between pages. First screen = Welcome until a scan exists,
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
+import { switchDemo } from "./api/client";
+import LanguageToggle from "./components/LanguageToggle";
 import { useEffect } from "react";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
@@ -29,6 +31,15 @@ function Shell() {
   let content: JSX.Element;
   if (!ready) {
     content = <div className="loading muted">{t("common.loading")}</div>;
+  } else if (app.loadFailed) {
+    content = <main className="page">
+      <LanguageToggle />
+      <ErrorBanner>{t("common.backendError")}</ErrorBanner>
+      <div className="row">
+        <button className="button primary" onClick={() => window.location.reload()}>{t("common.retry")}</button>
+        <button className="button" onClick={() => switchDemo(true)}>{t("common.openDemo")}</button>
+      </div>
+    </main>;
   } else if (scanning) {
     content = <ScanProgress />;
   } else if (!scan && (route.name === "home" || route.name === "dashboard")) {
@@ -59,7 +70,7 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-            page = <Ask key={scan?.id} />;
+          page = <Ask key={scan?.id} />;
           break;
         default:
           page = <Dashboard />;
@@ -80,11 +91,11 @@ function Shell() {
     <>
       {demo && ready && (
         <div className="demo-banner">
-          <ErrorBanner tone="info">{t("common.demo")}</ErrorBanner>
+          <ErrorBanner tone="info" action={<button className="link-button" onClick={() => switchDemo(false)}>{t("common.exitDemo")}</button>}>{t("common.demo")}</ErrorBanner>
         </div>
       )}
       {content}
-      <AjarDock />
+      {!app.loadFailed && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
     </>
   );

@@ -1,15 +1,15 @@
 // Ajar never disappears: one fixed element for the whole app. It moves (animated) between
 // the top-left corner, the welcome text, the side of an open dialog and the centre during a scan.
 import { useApp } from "../state/AppState";
-import { mascotState, scoreLevel } from "../lib/scan";
+import { assessment, mascotState } from "../lib/scan";
 import AjarMascot from "./AjarMascot";
 
 export default function AjarDock() {
   const { scan, scanning, ready, placement, anchor, bubble, setBubble, t } = useApp();
   const score = scan?.error ? null : scan?.score ?? null;
   // Until the last scan has loaded, Ajar waits calmly instead of flashing "locked".
-  const state = scanning || !ready ? "shut" : mascotState(score);
-  const level = scoreLevel(score);
+  const level = assessment(scan);
+  const state = scanning || !ready ? "shut" : mascotState(level);
   const label = t(`ajar.state.${state}`) + (score === null ? "" : `, ${t("score.outOf", { score })}`);
 
   return (
@@ -41,7 +41,7 @@ export default function AjarDock() {
               <span className="serif ajar-score-number">{score}</span>
               <span className="muted"> / 100</span>
             </span>
-            <span className={`ajar-score-label text-${level}`}>{t(`score.level.${level}`)}</span>
+            <span className={`ajar-score-label sev-${level}`}>{t(`assessment.${level}`)}</span>
           </>
         )}
       </div>

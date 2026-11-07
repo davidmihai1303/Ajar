@@ -2,9 +2,9 @@
 // comparing other scans and the full list are there but folded away.
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { ScanDiff } from "../api/proposedTypes";
+import type { ScanDiff } from "../api/types";
 import { formatDate } from "../i18n";
-import { scoreLevel } from "../lib/scan";
+import { previousComparable } from "../lib/scan";
 import { publicFilename } from "../lib/filename";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
@@ -15,12 +15,13 @@ import { IconTrash } from "../components/Icons";
 
 export default function History() {
   const { t, lang, history, scan, selectScan, deleteHistory } = useApp();
-  const readable = history.filter((item) => item.score !== null);
+  const readable = history.filter((item) => item.score !== null && item.findings_available);
   const latest = readable[0];
-  const previous = readable[1];
+  const previous = latest && previousComparable(history, latest);
   const [recent, setRecent] = useState<ScanDiff | null>(null);
   const [fromId, setFromId] = useState(readable[1]?.id ?? "");
   const [toId, setToId] = useState(readable[0]?.id ?? "");
+  const [comparing, setComparing] = useState(false);
   const [picked, setPicked] = useState<ScanDiff | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -49,16 +50,15 @@ export default function History() {
   }, [latest?.id, previous?.id]);
 
   useEffect(() => {
-    if (!fromId || !toId || fromId === toId) return setPicked(null);
+    if (!comparing || !fromId || !toId || fromId === toId) return setPicked(null);
     let alive = true;
     api.diff(fromId, toId).then((value) => alive && setPicked(value)).catch(() => alive && setPicked(null));
     return () => {
       alive = false;
     };
-  }, [fromId, toId]);
+  }, [comparing, fromId, toId]);
 
-  let lead = t("history.empty");
-  if (latest && !previous) lead = t("history.onlyOne", { date: formatDate(latest.created_at, lang) });
+  let lead = t(history.length ? "history.noBaseline" : "history.empty");
   if (latest && previous) {
     const vars = { from: previous.score ?? "—", to: latest.score ?? "—", date: formatDate(previous.created_at, lang) };
     const delta = (latest.score ?? 0) - (previous.score ?? 0);
@@ -67,7 +67,7 @@ export default function History() {
 
   const option = (id: string) => {
     const item = history.find((entry) => entry.id === id);
-    return item ? `${formatDate(item.created_at, lang)}, ${t("history.scoreShort", { score: item.score ?? "—" })}` : "";
+    return item ? `${publicFilename(item.file)} · ${formatDate(item.created_at, lang)}, ${t("history.scoreShort", { score: item.score ?? "—" })}` : "";
   };
 
   return (
@@ -77,12 +77,12 @@ export default function History() {
         <p className="history-lead">{lead}</p>
       </div>
 
-      <HistoryChart items={history} currentId={scan?.id ?? null} />
+      {previous && <HistoryChart items={readable.filter((item) => item.source === "live" && item.network_id === latest.network_id)} currentId={scan?.id ?? null} />}
 
-      {recent && <DiffList diff={recent} showScore={false} />}
+      {recent && recent.from_id === previous?.id && recent.to_id === latest?.id && <DiffList diff={recent} showScore={false} />}
 
       {readable.length >= 2 && (
-        <details className="fold">
+        <details className="fold" onToggle={(event) => setComparing(event.currentTarget.open)}>
           <summary className="h3">{t("history.compareOther")}</summary>
           <div className="stack gap-m fold-body">
             <div className="row end">
@@ -110,7 +110,7 @@ export default function History() {
                 </select>
               </label>
             </div>
-            {fromId === toId ? <p className="muted">{t("history.pickTwo")}</p> : picked && <DiffList diff={picked} />}
+            {fromId === toId ? <p className="muted">{t("history.pickTwo")}</p> : picked && picked.from_id === fromId && picked.to_id === toId && <DiffList diff={picked} />}
           </div>
         </details>
       )}
@@ -120,10 +120,10 @@ export default function History() {
         <ul className="scan-list fold-body">
           {history.map((item) => (
             <li key={item.id}>
-              <span className={`chip level-${scoreLevel(item.score)}`}>{item.score ?? t("history.unreadable")}</span>
+              <span className="chip">{item.score ?? t("history.unreadable")}</span>
               <span className="grow">
                 {formatDate(item.created_at, lang)}
-                <span className="muted"> {item.source === "live" ? t("history.live") : t("history.importedFile", { file: publicFilename(item.file) })}</span>
+                <span className="muted"> {item.source === "live" ? t("history.live") : item.source === "import" ? t("history.importedFile", { file: publicFilename(item.file) }) : publicFilename(item.file)}</span>
               </span>
               {item.score !== null && (
                 <a href={href({ name: "dashboard" })} onClick={() => void selectScan(item.id)}>

@@ -7,7 +7,7 @@ const origin = "http://ajar.test";
 const dist = new URL("../dist/", import.meta.url);
 const network = { interface: "wlan0", subnet: "192.168.1.0/24", ssid: "Office A", gateway: null };
 const good = { id: "fixture", source: "import", file: "test.xml", created_at: "2026-11-07T12:00:00Z",
-  score: 100, ssid: network.ssid, subnet: network.subnet, error: null, devices: [], findings: [] };
+  score: 100, network_id: null, findings_available: true, ssid: network.ssid, subnet: network.subnet, error: null, devices: [], findings: [] };
 
 let browser;
 before(async () => { browser = await chromium.launch(); });
@@ -95,13 +95,16 @@ test("shows bilingual detection and dispatch refusals, including after a retry",
 for (const lang of ["en", "ro"]) {
   test(`offline demo disables XML import and describes only observed services (${lang})`, async (t) => {
     const page = await open(t, "scan", { offline: true, lang });
+    await page.getByRole("button", { name: lang === "en" ? "Try again" : "Încearcă din nou" }).waitFor();
+    assert.equal(await page.locator(".demo-banner").count(), 0);
+    await page.getByRole("button", { name: lang === "en" ? "Open demo" : "Deschide demonstrația" }).click();
     await page.getByText(lang === "en" ? /Demo mode shows example scans only/ : /Modul demonstrativ afișează doar exemple/).waitFor();
     assert.equal(await page.locator("input[type=file], .dropzone, .results").count(), 0);
     for (const [ip, evidence] of [
       ["172.20.10.5", lang === "en" ? /did not check whether viewing the stream/ : /Nu a verificat dacă accesul/],
       ["172.20.10.6", lang === "en" ? /did not check who can send commands/ : /Nu a verificat cine poate trimite/],
     ]) {
-      await page.goto(`${origin}/#/devices/${ip}`);
+      await page.goto(`${origin}/?demo=1#/devices/${ip}`);
       await page.locator(".finding-text").filter({ hasText: evidence }).waitFor();
     }
   });
@@ -114,6 +117,9 @@ test("an unreadable scan and a scan without a score never show the all-clear mes
     await page.getByText(error ? /file couldn't be read/ : /This scan has no score/).waitFor();
     assert.equal(await page.locator(".fix-first, section[aria-label='By severity']").count(), 0);
   }
+  const legacy = await open(t, "dashboard", { scan: { ...good, score: 85, findings_available: false } });
+  await legacy.getByText(/finding details are unavailable/).waitFor();
+  assert.equal(await legacy.locator(".fix-first").count(), 0);
   const page = await open(t, "dashboard");
   await page.getByText("Ajar found no problems in this scan.").waitFor();
 });
@@ -140,6 +146,71 @@ test("import and history protect filenames, including failures with no API respo
   await page.goto(origin + "/#/history");
   await page.locator("summary").filter({ hasText: "All scans" }).click();
   await page.getByText(/office-50:C7:BF:xx:xx:xx.xml/).waitFor();
+});
+
+test("a delayed scan selection cannot restore deleted history", async (t) => {
+  const older = { ...good, id: "old", created_at: "2026-11-05T12:00:00Z", score: 80 };
+  let finish;
+  const delayed = new Promise((resolve) => { finish = resolve; });
+  const page = await open(t, "dashboard", { onApi(path, req) {
+    if (path === "/api/history") return req.method() === "DELETE" ? { status: 204 } : { json: [good, older] };
+    if (path === "/api/scans/old") return delayed;
+  } });
+  const reading = page.waitForRequest("**/api/scans/old");
+  await page.locator(".sidebar-recent").nth(1).click();
+  await reading;
+  await page.locator('a[href="#/history"]').first().click();
+  await page.getByRole("button", { name: "Delete my history" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete history" }).click();
+  await page.locator(".welcome").waitFor();
+  const received = page.waitForResponse("**/api/scans/old");
+  finish({ json: older });
+  await (await received).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator(".welcome").count(), 1);
+  assert.equal(await page.locator(".score-number").count(), 0);
+});
+
+test("the last selected scan stays on screen when earlier requests finish later", async (t) => {
+  const older = { ...good, id: "old", created_at: "2026-11-05T12:00:00Z", score: 80 };
+  let finish;
+  const delayed = new Promise(resolve => { finish = resolve; });
+  const page = await open(t, "dashboard", { onApi(path) {
+    if (path === "/api/history") return { json: [good, older] };
+    if (path === "/api/scans/old") return delayed;
+  } });
+  const reading = page.waitForRequest("**/api/scans/old");
+  await page.locator(".sidebar-recent").nth(1).click();
+  await reading;
+  const selected = page.waitForResponse("**/api/scans/fixture");
+  await page.locator(".sidebar-recent").first().click();
+  await (await selected).finished();
+  const stale = page.waitForResponse("**/api/scans/old");
+  finish({ json: older });
+  await (await stale).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator(".score-number").innerText(), "100");
+});
+
+test("history automatically compares only scans of the same known network", async (t) => {
+  const now = { ...good, id: "current", source: "live", network_id: "A", ssid: "Office" };
+  const guest = { ...now, id: "guest", network_id: "B", score: 20, created_at: "2026-11-06T12:00:00Z" };
+  const previous = { ...now, id: "previous", score: 80, created_at: "2026-11-05T12:00:00Z" };
+  for (const items of [[now, guest], [now, guest, previous]]) {
+    const comparisons = [];
+    const page = await open(t, "history", { scan: now, onApi(path, request) {
+      if (path === "/api/history") return { json: items };
+      if (path === "/api/history/diff") comparisons.push(new URL(request.url()).searchParams.get("from"));
+    } });
+    const lead = await page.locator(".history-lead").innerText();
+    if (items.length === 2) {
+      assert.match(lead, /two assessed scans/);
+      assert.deepEqual(comparisons, []);
+    } else {
+      assert.match(lead, /80 to 100/);
+      assert.ok(!comparisons.includes("guest"));
+    }
+  }
 });
 
 test("a failed history deletion can be retried and a 204 clears the view", async (t) => {

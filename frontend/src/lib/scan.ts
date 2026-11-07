@@ -1,23 +1,31 @@
 // Pure helpers over a scan: who is most dangerous, what to fix first, which mascot state to show.
 import type { AjarState } from "../components/AjarMascot";
-import type { Device, Finding, Scan, Severity } from "../api/proposedTypes";
+import type { Device, Finding, HistoryItem, Scan, Severity } from "../api/types";
 
 export const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1, info: 0 };
 
-export function mascotState(score: number | null | undefined): AjarState {
-  if (score === null || score === undefined) return "unknown";
-  if (score >= 100) return "locked";
-  if (score >= 80) return "shut";
-  if (score >= 50) return "ajar";
-  return "wide";
+export function previousComparable(items: HistoryItem[], current: Scan | HistoryItem): HistoryItem | undefined {
+  if (current.source !== "live" || !current.network_id || !current.findings_available || current.score === null) return;
+  const index = items.findIndex((item) => item.id === current.id);
+  if (index < 0) return;
+  return items.slice(index + 1).find((item) => item.source === "live" && item.network_id === current.network_id &&
+    item.findings_available && item.score !== null);
 }
 
-/** Label key for the score: safe / attention / risky / unknown. */
-export function scoreLevel(score: number | null | undefined): "unknown" | "safe" | "attention" | "risky" {
-  if (score === null || score === undefined) return "unknown";
-  if (score >= 80) return "safe";
-  if (score >= 50) return "attention";
-  return "risky";
+export function assessment(scan: Scan | null): Severity | "clear" | "unknown" {
+  if (!scan || scan.score === null || scan.error || !scan.findings_available) return "unknown";
+  let worst: Severity | null = null;
+  for (const finding of scan.findings) {
+    if (!worst || SEVERITY_RANK[finding.severity] > SEVERITY_RANK[worst]) worst = finding.severity;
+  }
+  return worst ?? "clear";
+}
+
+export function mascotState(level: ReturnType<typeof assessment>): AjarState {
+  if (level === "unknown") return "unknown";
+  if (level === "clear") return "locked";
+  if (level === "high") return "wide";
+  return "ajar";
 }
 
 const ipNumber = (ip: string) => ip.split(".").reduce((total, part) => total * 256 + Number(part), 0);

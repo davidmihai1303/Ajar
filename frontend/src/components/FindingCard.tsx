@@ -2,15 +2,15 @@
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Explanation, Finding } from "../api/proposedTypes";
+import type { Explanation, Finding } from "../api/types";
 import { useApp } from "../state/AppState";
 import { SeverityBadge } from "./ScoreBadge";
 
-export default function FindingCard({ finding, deviceName }: { finding: Finding; deviceName: string }) {
+export default function FindingCard({ finding }: { finding: Finding }) {
   const { t, lang, scan, aiConsent } = useApp();
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
-  const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off" | "noAnswer">("idle");
+  const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off">("idle");
   const active = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -20,18 +20,19 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
       active.current?.abort();
       active.current = null;
     };
-  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, lang]);
+  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, finding.protocol, lang]);
 
   useEffect(() => {
     let alive = true;
+    setText(null);
     api
-      .explain(finding.code, lang)
+      .explain(finding.code, lang, scan?.id, finding)
       .then((value) => alive && setText(value))
       .catch(() => alive && setText(null));
     return () => {
       alive = false;
     };
-  }, [finding.code, lang]);
+  }, [finding, scan?.id, lang]);
 
   const rephrase = async () => {
     if (!scan || aiConsent !== true) {
@@ -43,15 +44,10 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
     active.current = controller;
     setRephraseState("loading");
     try {
-      const question = t("finding.rephraseQuestion", { code: finding.code, device: deviceName, ip: finding.ip });
-      const answer = await api.ask(scan.id, question, lang, controller.signal);
+      const answer = await api.personalize(scan.id, finding, lang, controller.signal);
       if (controller.signal.aborted) return;
-      if (!answer.available) setRephraseState("off");
-      else if (!answer.can_answer || !answer.answer) setRephraseState("noAnswer");
-      else {
-        setRephrased(answer.answer);
-        setRephraseState("idle");
-      }
+      setRephrased(answer.explanation);
+      setRephraseState("idle");
     } catch {
       if (!controller.signal.aborted) setRephraseState("off");
     } finally {
@@ -79,7 +75,6 @@ export default function FindingCard({ finding, deviceName }: { finding: Finding;
           {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
         </button>
         {rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
-        {rephraseState === "noAnswer" && <span className="muted">{t("ask.cannotAnswer")}</span>}
         <details className="tech">
           <summary>{t("common.technical")}</summary>
           <p className="mono">
