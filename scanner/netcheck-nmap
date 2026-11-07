@@ -51,18 +51,16 @@ EXCLUDED_PREFIXES = ("lo", "tun", "tap", "wg", "tailscale", "zt", "ppp",
                      "docker", "br-", "veth", "virbr", "vmnet", "vboxnet")
 
 
-def current_subnet() -> ipaddress.IPv4Network:
-    """Same selection rule as scanner/detect.py, duplicated on purpose (no imports from the repo)."""
-    ip_bin: str = first_existing(IP_BINARIES)
-    routes = json.loads(subprocess.run([ip_bin, "-j", "-4", "route", "show"],
-                                       capture_output=True, text=True).stdout or "[]")
-    addrs = json.loads(subprocess.run([ip_bin, "-j", "-4", "addr", "show"],
-                                      capture_output=True, text=True).stdout or "[]")
+def choose_subnet(addrs: list) -> ipaddress.IPv4Network:
+    """Pure. Same rule as scanner/detect.py, duplicated on purpose (no imports from the repo):
+    exactly ONE physical network with a private IPv4 must be connected, otherwise ValueError.
+    With several (e.g. hotspot Wi-Fi + venue cable) we refuse instead of guessing, because the
+    default route would point at the venue network and make it look like "our" subnet."""
     candidates: dict = {}
-    order: list = []
     for entry in addrs:
         name: str = entry.get("ifname", "")
-        if name.startswith(EXCLUDED_PREFIXES) or "UP" not in entry.get("flags", ["UP"]):
+        flags: list = entry.get("flags", ["UP"])
+        if name.startswith(EXCLUDED_PREFIXES) or "UP" not in flags or "NO-CARRIER" in flags:
             continue
         for info in entry.get("addr_info", []):
             if info.get("family") != "inet":
@@ -70,13 +68,24 @@ def current_subnet() -> ipaddress.IPv4Network:
             ip = ipaddress.ip_address(info["local"])
             if ip.is_private and not ip.is_loopback and not ip.is_link_local:
                 candidates[name] = ipaddress.ip_network(f"{info['local']}/{info['prefixlen']}", strict=False)
-                order.append(name)
                 break
     if not candidates:
-        fail("no physical network with a private IPv4 address")
-    chosen: str = next((r["dev"] for r in routes
-                        if r.get("dst") == "default" and r.get("dev") in candidates), order[0])
-    return candidates[chosen]
+        raise ValueError("no physical network with a private IPv4 address")
+    if len(candidates) > 1:
+        raise ValueError("connected to more than one network (" + ", ".join(sorted(candidates))
+                         + "); disconnect from all but the team hotspot")
+    return next(iter(candidates.values()))
+
+
+def current_subnet() -> ipaddress.IPv4Network:
+    ip_bin: str = first_existing(IP_BINARIES)
+    addrs = json.loads(subprocess.run([ip_bin, "-j", "-4", "addr", "show"],
+                                      capture_output=True, text=True).stdout or "[]")
+    try:
+        return choose_subnet(addrs)
+    except ValueError as e:
+        fail(str(e))
+        raise  # unreachable: fail() exits
 
 
 def extra_tcp_ports() -> str:

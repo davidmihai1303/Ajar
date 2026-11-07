@@ -2,6 +2,11 @@
 
 Interfaces that are not the user's physical network are ignored, so a VPN or
 Docker bridge is never mistaken for "the network this laptop is on".
+
+If more than one physical network is connected (e.g. the hotspot over Wi-Fi AND
+the venue network over a cable), detection REFUSES instead of picking one.
+Picking the default-route interface would put the venue network in the
+allowlist, and the guard would then allow scanning it.
 """
 import ipaddress
 import json
@@ -27,7 +32,12 @@ class NetworkInfo:
 
 
 class DetectError(RuntimeError):
-    pass
+    """Raised with a bilingual, user-facing reason (same shape as guard.ScopeError)."""
+
+    def __init__(self, en: str, ro: str = "") -> None:
+        super().__init__(en)
+        self.en: str = en
+        self.ro: str = ro or en
 
 
 def is_excluded(ifname: str) -> bool:
@@ -41,39 +51,50 @@ def _run(*args: str) -> str:
 def _ip_json(*args: str) -> list:
     ip_bin = shutil.which("ip")
     if ip_bin is None:
-        raise DetectError("the 'ip' command (iproute2) is not available")
+        raise DetectError("The 'ip' command (iproute2) is not available.",
+                          "Comanda „ip” (iproute2) nu este disponibilă.")
     return json.loads(_run(ip_bin, "-j", *args) or "[]")
 
 
-def choose_network(routes: list, addrs: list) -> tuple:
-    """Pure function (unit-testable). Returns (ifname, local_ip, prefixlen, gateway).
-
-    Preference: the default-route interface if it is a real one; otherwise the first
-    UP, non-excluded interface with a private IPv4 address (covers VPN-as-default-route
-    and LANs without internet).
-    """
-    candidates: dict = {}
-    order: list = []
+def physical_networks(addrs: list) -> dict:
+    """Pure. ifname -> (local_ip, prefixlen) for every UP, non-virtual interface with a private IPv4."""
+    found: dict = {}
     for entry in addrs:
         name: str = entry.get("ifname", "")
-        if is_excluded(name) or "UP" not in entry.get("flags", ["UP"]):
+        flags: list = entry.get("flags", ["UP"])
+        if is_excluded(name) or "UP" not in flags or "NO-CARRIER" in flags:
             continue
         for info in entry.get("addr_info", []):
             if info.get("family") != "inet":
                 continue
             ip = ipaddress.ip_address(info["local"])
             if ip.is_private and not ip.is_loopback and not ip.is_link_local:
-                candidates[name] = (info["local"], int(info["prefixlen"]))
-                order.append(name)
+                found[name] = (info["local"], int(info["prefixlen"]))
                 break
-    if not candidates:
-        raise DetectError("no physical network with a private IPv4 address was found")
+    return found
 
-    gateways: dict = {r["dev"]: r.get("gateway", "") for r in routes if r.get("dst") == "default"}
-    chosen: str = next((r["dev"] for r in routes
-                        if r.get("dst") == "default" and r.get("dev") in candidates), order[0])
-    local, prefix = candidates[chosen]
-    return chosen, local, prefix, gateways.get(chosen, "")
+
+def choose_network(routes: list, addrs: list) -> tuple:
+    """Pure function (unit-testable). Returns (ifname, local_ip, prefixlen, gateway).
+
+    Exactly one physical network must be connected. Zero or several -> DetectError.
+    """
+    candidates: dict = physical_networks(addrs)
+    if not candidates:
+        raise DetectError("No physical network with a private IPv4 address was found. Connect to the team hotspot.",
+                          "Nu am găsit nicio rețea fizică cu adresă IPv4 privată. Conectează-te la hotspotul echipei.")
+    if len(candidates) > 1:
+        names: str = ", ".join(sorted(candidates))
+        raise DetectError(
+            f"This laptop is connected to more than one network ({names}). "
+            "Disconnect from all of them except the team hotspot, then try again.",
+            f"Laptopul este conectat la mai multe rețele ({names}). "
+            "Deconectează-te de la toate, în afară de hotspotul echipei, apoi încearcă din nou.")
+
+    name, (local, prefix) = next(iter(candidates.items()))
+    gateway: str = next((r.get("gateway", "") for r in routes
+                         if r.get("dst") == "default" and r.get("dev") == name), "")
+    return name, local, prefix, gateway
 
 
 def _ssid(ifname: str) -> str:
