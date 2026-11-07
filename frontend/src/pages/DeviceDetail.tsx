@@ -12,6 +12,7 @@ export default function DeviceDetail({ ip }: { ip: string }) {
   const deviceName = useDeviceName();
   const risk = scan ? deviceRisks(scan).find((item) => item.device.ip === ip) : undefined;
 
+  if (scan && !scan.findings_available) return <p className="page">{t("dashboard.unassessed")}</p>;
   if (!risk) {
     return (
       <div className="page">
@@ -43,7 +44,7 @@ export default function DeviceDetail({ ip }: { ip: string }) {
 
       {findings.length === 0 && <p className="card">{t("device.noFindings")}</p>}
       {findings.map((finding) => (
-        <FindingCard key={`${finding.code}-${finding.port}`} finding={finding} deviceName={name} />
+        <FindingCard key={`${finding.code}-${finding.port}`} finding={finding} />
       ))}
 
       <details className="card tech-card">

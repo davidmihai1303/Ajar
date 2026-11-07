@@ -15,6 +15,7 @@ export default function Devices() {
   const { t, scan } = useApp();
   const [sort, setSort] = useState<Sort>("danger");
   if (!scan) return null;
+  if (!scan.findings_available) return <p className="page">{t("dashboard.unassessed")}</p>;
   const risks = deviceRisks(scan).sort(sorters[sort]);
 
   return (

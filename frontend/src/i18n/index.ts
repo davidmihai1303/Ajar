@@ -1,7 +1,7 @@
 // Tiny i18n helper: t(key, vars) using ro.json / en.json, language kept in app state.
 import en from "./en.json";
 import ro from "./ro.json";
-import type { Lang } from "../api/proposedTypes";
+import type { Lang } from "../api/types";
 
 type Dict = Record<string, string>;
 const DICTS: Record<Lang, Dict> = { ro, en };

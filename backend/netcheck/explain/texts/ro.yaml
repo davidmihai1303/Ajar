@@ -1,6 +1,108 @@
-# RO texts per finding code. explanation: max 2 sentences, no jargon. fixes: 1-5 ordered steps.
-# TODO: fill in all 15 codes.
 TELNET_OPEN:
-  title: ""
-  explanation: ""
-  fixes: []
+  title: "Conectare la distanță fără criptare"
+  explanation: "Dispozitivul permite conectarea prin Telnet. Dacă îl folosești, cineva din rețea îți poate citi parola."
+  fixes:
+    - "Deschide setările de administrare ale dispozitivului."
+    - "Oprește Telnet."
+    - "Dacă ai nevoie de acces la distanță, activează SSH."
+RDP_EXPOSED:
+  title: "Desktopul la distanță este accesibil"
+  explanation: "Din rețea este accesibil un serviciu folosit pentru a controla calculatorul de la distanță. Verifică cine se poate conecta."
+  fixes:
+    - "Deschide setările pentru Desktop la distanță."
+    - "Oprește serviciul dacă nu îl folosești sau permite doar conturile și calculatoarele de încredere."
+VNC_EXPOSED:
+  title: "Partajarea ecranului este accesibilă"
+  explanation: "Dispozitivul oferă partajarea ecranului prin VNC. Scanarea nu a verificat cine poate vedea sau controla ecranul."
+  fixes:
+    - "Deschide setările de partajare a ecranului."
+    - "Oprește partajarea dacă nu o folosești."
+    - "Dacă ai nevoie de ea, cere autentificare și permite doar utilizatorii de încredere."
+DB_EXPOSED:
+  title: "O bază de date este accesibilă"
+  explanation: "Un serviciu care stochează date acceptă conexiuni din rețea. Scanarea nu a verificat cine poate citi datele."
+  fixes:
+    - "Deschide setările de conectare ale bazei de date."
+    - "Permite conexiuni doar de la aplicația care folosește datele."
+    - "Cere autentificare pentru acea aplicație."
+CAMERA_STREAM_EXPOSED:
+  title: "Un serviciu audio sau video este accesibil"
+  explanation: "Scanarea a găsit un serviciu prin care se poate transmite sunet sau imagine. Nu a verificat dacă redarea cere o parolă."
+  fixes:
+    - "Deschide setările de partajare media ale dispozitivului."
+    - "Oprește transmisia dacă nu o folosești sau limitează cine se poate conecta."
+OUTDATED_SERVICE:
+  title: "Un serviciu raportează o versiune veche"
+  explanation: "Versiunea raportată apare pe lista programelor învechite. Verifică dacă producătorul oferă o actualizare."
+  fixes:
+    - "Deschide setările de actualizare ale dispozitivului sau aplicației."
+    - "Instalează actualizarea recomandată de producător."
+    - "Scanează din nou și verifică versiunea raportată."
+FTP_CLEARTEXT:
+  title: "Este accesibil un serviciu de fișiere FTP"
+  explanation: "Dispozitivul oferă FTP pentru transferul fișierelor. FTP fără criptare poate expune parolele și fișierele în rețea."
+  fixes:
+    - "Deschide setările de partajare a fișierelor."
+    - "Oprește FTP dacă nu îl folosești."
+    - "Pentru fișiere private, alege un transfer criptat, de exemplu SFTP."
+HTTP_ADMIN_CLEARTEXT:
+  title: "O pagină de setări folosește HTTP fără criptare"
+  explanation: "Scanarea a găsit o pagină care pare destinată setărilor sau autentificării. O parolă introdusă prin HTTP fără criptare ar putea fi citită în rețea."
+  fixes:
+    - "Deschide setările de administrare ale dispozitivului."
+    - "Activează HTTPS dacă este disponibil."
+    - "Folosește adresa HTTPS și dezactivează accesul prin HTTP simplu."
+SMB_EXPOSED:
+  title: "Partajarea fișierelor este accesibilă"
+  explanation: "Dispozitivele din rețea pot contacta un serviciu de partajare a fișierelor. Verifică ce dosare sunt partajate și cine le poate deschide."
+  fixes:
+    - "Deschide setările dosarelor partajate."
+    - "Elimină dosarele pe care nu mai vrei să le partajezi."
+    - "Permite accesul doar conturilor care au nevoie de el."
+MQTT_EXPOSED:
+  title: "Un serviciu de mesaje pentru dispozitive inteligente este accesibil"
+  explanation: "Scanarea a găsit MQTT, serviciul prin care dispozitivele inteligente schimbă mesaje. Nu a verificat cine poate trimite comenzi."
+  fixes:
+    - "Deschide setările MQTT ale hubului."
+    - "Verifică ce dispozitive pot trimite mesaje."
+    - "Dacă accesul anonim este permis, dezactivează-l."
+UPNP_EXPOSED:
+  title: "Configurarea automată a rețelei este accesibilă"
+  explanation: "Dispozitivul oferă UPnP, o funcție de configurare automată a rețelei. Pe un router, aplicațiile o pot folosi pentru a cere conexiuni din internet."
+  fixes:
+    - "Deschide setările de rețea ale dispozitivului."
+    - "Găsește UPnP și oprește-l dacă aplicațiile tale nu au nevoie de el."
+SNMP_EXPOSED:
+  title: "Monitorizarea prin rețea este accesibilă"
+  explanation: "Dispozitivul oferă SNMP, un serviciu folosit pentru a citi informații despre dispozitiv. Verifică ce calculatoare au acces."
+  fixes:
+    - "Deschide setările de monitorizare a rețelei."
+    - "Oprește SNMP dacă nu îl folosești."
+    - "Dacă ai nevoie de el, permite doar calculatorul de monitorizare și folosește SNMPv3 cu criptare."
+PRINTER_RAW_EXPOSED:
+  title: "Imprimarea directă este accesibilă"
+  explanation: "Imprimanta acceptă conexiuni directe din rețea pentru imprimare. Verifică dacă ai nevoie de această metodă."
+  fixes:
+    - "Deschide setările de rețea ale imprimantei."
+    - "Caută imprimarea directă, numită și RAW sau JetDirect."
+    - "Dezactiveaz-o dacă nu o folosești sau permite accesul doar calculatoarelor de încredere."
+UNKNOWN_DEVICE:
+  title: "Un dispozitiv nu a putut fi identificat"
+  explanation: "Dispozitivul are un serviciu accesibil, dar scanarea nu a găsit producătorul sau numele lui. Verifică dacă ar trebui să fie în rețeaua ta."
+  fixes:
+    - "Deschide lista dispozitivelor conectate la router."
+    - "Compară adresa cu cele ale dispozitivelor tale."
+    - "Dacă identifici un dispozitiv nedorit, retrage-i accesul la Wi-Fi."
+SSH_OPEN:
+  title: "Conectarea criptată la distanță este accesibilă"
+  explanation: "Dispozitivul oferă SSH pentru conectare criptată la distanță. Acest lucru poate fi normal dacă îl administrezi astfel."
+  fixes:
+    - "Verifică dacă folosești accesul la distanță."
+    - "Oprește SSH dacă nu îl folosești sau permite accesul doar persoanelor care administrează dispozitivul."
+CAMERA_STREAM_EXPOSED.camera:
+  title: "Serviciul video al camerei este accesibil"
+  explanation: "Scanarea a găsit serviciul prin care camera transmite imagini. Nu a verificat cine poate urmări transmisia."
+  fixes:
+    - "Deschide setările video ale camerei."
+    - "Verifică cine poate urmări transmisia."
+    - "Cere autentificare sau oprește transmisia dacă nu o folosești."

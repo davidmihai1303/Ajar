@@ -1,7 +1,6 @@
 // Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and stays put when the
 // sidebar hides), then "new scan", navigation, recent scans, language and the hide button.
 import { formatDate } from "../i18n";
-import { scoreLevel } from "../lib/scan";
 import { href, type Route } from "../router";
 import { useApp } from "../state/AppState";
 import { IconAsk, IconDashboard, IconDevices, IconHistory, IconPlus, IconSidebar } from "./Icons";
@@ -43,7 +42,7 @@ export default function Sidebar({ current }: { current: Route["name"] }) {
           {history.slice(0, 5).map((item) => (
             <a key={item.id} href={href({ name: "dashboard" })} className={`sidebar-recent${scan?.id === item.id ? " active" : ""}`} onClick={() => void selectScan(item.id)}>
               <span>{formatDate(item.created_at, lang)}</span>
-              <span className={`chip recent-score level-${scoreLevel(item.score)}`}>{item.score ?? "—"}</span>
+              <span className="chip recent-score">{item.score ?? "—"}</span>
             </a>
           ))}
         </div>

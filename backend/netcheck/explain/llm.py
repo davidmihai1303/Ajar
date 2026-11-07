@@ -71,6 +71,7 @@ class Answer:
     source: str                   # "scan" | "llm" | "fallback"
     grounded: bool                # False when the scan cannot answer the question
     problems: list = field(default_factory=list)
+    unavailable: bool = False
 
 
 # --------------------------------------------------------------------------- client
@@ -249,7 +250,7 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
     if _SCORE_QUESTION.fullmatch(question.rstrip(" .!?")):
         return Answer(score_text(evidence.score, lang), "scan", grounded=True)
     if not client.enabled:
-        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False)
+        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False, unavailable=True)
     options = answer_options(evidence, question, ips, lang)
     if not options:
         return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
@@ -257,7 +258,7 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
         return Answer(_FALLBACK["narrow"][lang], "fallback", grounded=False)
     selected = _select(client, question, options, 4)
     if selected is None:
-        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False)
+        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False, unavailable=True)
     if not selected:
         return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
     return Answer(" ".join(selected), "llm", grounded=True)

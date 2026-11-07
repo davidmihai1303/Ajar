@@ -2,9 +2,9 @@
 // Kept short on purpose: score, one compact "fix this first" card, counts, and changes folded away.
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { Explanation, ScanDiff } from "../api/proposedTypes";
+import type { Explanation, ScanDiff } from "../api/types";
 import { formatDate } from "../i18n";
-import { fixFirst, severityCounts } from "../lib/scan";
+import { fixFirst, previousComparable, severityCounts } from "../lib/scan";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
@@ -25,20 +25,20 @@ export default function Dashboard() {
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(readOpen);
-  const assessed = scan !== null && scan.score !== null && !scan.error;
+  const assessed = scan !== null && scan.score !== null && scan.findings_available && !scan.error;
   const first = assessed ? fixFirst(scan) : null;
   const finding = first?.findings[0] ?? null;
-  const index = scan ? history.findIndex((item) => item.id === scan.id) : -1;
-  const previous = index >= 0 ? history.slice(index + 1).find((item) => item.score !== null) : undefined;
+  const previous = scan ? previousComparable(history, scan) : undefined;
 
   useEffect(() => {
     if (!finding) return setText(null);
     let alive = true;
-    api.explain(finding.code, lang).then((value) => alive && setText(value)).catch(() => alive && setText(null));
+    setText(null);
+    api.explain(finding.code, lang, scan?.id, finding).then((value) => alive && setText(value)).catch(() => alive && setText(null));
     return () => {
       alive = false;
     };
-  }, [finding?.code, lang]);
+  }, [finding?.code, finding?.port, finding?.protocol, finding?.ip, scan?.id, lang]);
 
   useEffect(() => {
     if (!assessed || !scan || !previous) return setDiff(null);
@@ -74,7 +74,7 @@ export default function Dashboard() {
   if (!assessed) return (
     <div className="page">
       <h1 className="serif h1">{t("dashboard.unassessed")}</h1>
-      <p className="banner banner-error">{t(scan.error ? "scan.unreadable" : "dashboard.noScore")}</p>
+      <p className="banner banner-error">{t(scan.error ? "scan.unreadable" : scan.score === null ? "dashboard.noScore" : "dashboard.noEvidence")}</p>
       <a className="button primary self-start" href={href({ name: "scan" })}>{t("nav.newScan")}</a>
     </div>
   );
@@ -86,7 +86,7 @@ export default function Dashboard() {
     <div className="page">
       <section className="row spread end">
         <div className="stack">
-          <ScoreBadge score={scan.score} />
+          <ScoreBadge scan={scan} />
           <span className="muted">
             {t("dashboard.context", {
               ssid: scan.ssid ?? t("network.unknownName"),
@@ -141,7 +141,7 @@ export default function Dashboard() {
         ))}
       </section>
 
-      {diff && changes > 0 && (
+      {diff && diff.from_id === previous?.id && diff.to_id === scan.id && changes > 0 && (
         <section className="changes">
           <button type="button" className="changes-toggle" aria-expanded={alertsOpen} aria-controls="changes-list" onClick={toggleAlerts}>
             <IconBell />

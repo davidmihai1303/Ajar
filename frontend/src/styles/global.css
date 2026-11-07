@@ -97,12 +97,13 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .sev-high, .level-risky { background: var(--red-bg); color: var(--red); border-color: var(--red-line); }
 .sev-medium, .level-attention { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
 .sev-low { background: var(--blue-bg); color: var(--blue); border-color: var(--blue-line); }
-.sev-info, .level-unknown { background: var(--grey-bg); color: var(--grey); }
-.sev-ok, .level-safe { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
-.text-risky { color: var(--red); }
-.text-attention { color: var(--amber); }
-.text-safe { color: var(--green); }
-.text-unknown { color: var(--grey); }
+.sev-info, .sev-unknown, .level-unknown { background: var(--grey-bg); color: var(--grey); }
+.sev-ok, .sev-clear, .level-safe { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
+.text-high, .text-risky { color: var(--red); }
+.text-medium, .text-attention { color: var(--amber); }
+.text-clear, .text-safe { color: var(--green); }
+.text-low { color: var(--blue); }
+.text-info, .text-unknown { color: var(--grey); }
 .tag { margin-left: 8px; border: 1px solid #b9afa4; border-radius: 999px; padding: 0 8px; font-weight: 400; color: var(--muted); }
 
 /* Layout: app shell */

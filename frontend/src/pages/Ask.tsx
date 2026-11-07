@@ -23,6 +23,8 @@ export default function Ask() {
   const [busy, setBusy] = useState(false);
   const [askConsent, setAskConsent] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  const hasEvidence = !!scan && scan.findings_available && scan.score !== null && !scan.error;
+  const [modelOffline, setModelOffline] = useState(false);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
   useEffect(() => {
@@ -32,6 +34,16 @@ export default function Ask() {
       setBusy(false);
     }
   }, [aiConsent]);
+
+  useEffect(() => {
+    setModelOffline(false);
+    if (aiConsent !== true || !hasEvidence) return;
+    const controller = new AbortController();
+    api.modelStatus(controller.signal).then(({ available }) => {
+      if (!controller.signal.aborted) setModelOffline(!available);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [aiConsent, hasEvidence]);
 
   const turnOff = () => {
     active.current?.abort();
@@ -43,7 +55,7 @@ export default function Ask() {
   };
 
   const send = async (text: string, consented = false) => {
-    if (!scan || active.current || (aiConsent === false && !consented)) return;
+    if (!scan || !hasEvidence || active.current || (aiConsent === false && !consented)) return;
     const trimmed = text.trim();
     if (!trimmed) {
       setError(true);
@@ -62,13 +74,8 @@ export default function Ask() {
     try {
       const answer = await api.ask(scan.id, trimmed, lang, controller.signal);
       if (controller.signal.aborted) return;
-      if (!answer.available) {
-        setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
-      } else if (!answer.can_answer || !answer.answer) {
-        setMessages((list) => [...list, { from: "ajar", text: t("ask.cannotAnswer"), muted: true }]);
-      } else {
-        setMessages((list) => [...list, { from: "ajar", text: answer.answer as string }]);
-      }
+      const reply = answer.answer ?? t(answer.available ? "ask.cannotAnswer" : "ask.off");
+      setMessages((list) => [...list, { from: "ajar", text: reply, muted: !answer.can_answer }]);
     } catch {
       if (controller.signal.aborted) return;
       setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
@@ -93,6 +100,8 @@ export default function Ask() {
       </div>
 
       {!scan && <p className="muted">{t("common.noScan")}</p>}
+      {scan && !hasEvidence && <p className="muted">{t("ask.noEvidence")}</p>}
+      {aiConsent === true && modelOffline && <p className="muted">{t("ask.modelOffline")}</p>}
       {aiConsent === true && (
         <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
       )}
@@ -127,7 +136,7 @@ export default function Ask() {
       <form className="composer-wrap" onSubmit={submit}>
         <div className="row">
           {SUGGESTIONS.map((key) => (
-            <button key={key} type="button" className="pill" onClick={() => void send(t(key))} disabled={!scan || busy || aiConsent === false}>
+            <button key={key} type="button" className="pill" onClick={() => void send(t(key))} disabled={!hasEvidence || busy || aiConsent === false}>
               {t(key)}
             </button>
           ))}
@@ -138,7 +147,7 @@ export default function Ask() {
           </label>
           <textarea
             id="ask-question"
-            disabled={!scan || aiConsent === false}
+            disabled={!hasEvidence || aiConsent === false}
             rows={2}
             value={question}
             placeholder={t("ask.placeholder")}
@@ -155,7 +164,7 @@ export default function Ask() {
             aria-invalid={error}
             aria-describedby={error ? "ask-error" : undefined}
           />
-          <button type="submit" className="icon-button primary" aria-label={t("ask.send")} disabled={!scan || busy || aiConsent === false}>
+          <button type="submit" className="icon-button primary" aria-label={t("ask.send")} disabled={!hasEvidence || busy || aiConsent === false}>
             <IconSend />
           </button>
         </div>

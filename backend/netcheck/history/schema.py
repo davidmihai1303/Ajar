@@ -10,7 +10,7 @@ from .records import public_scan_id, scan_start_time, utc_timestamp
 from .rows import read_scan, write_findings
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _CREATE = (
     """CREATE TABLE IF NOT EXISTS scans (
         scan_id TEXT PRIMARY KEY,
@@ -156,7 +156,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version == _SCHEMA_VERSION:  # Another initializer finished while we were waiting.
         return
-    if version not in (0, 1, 2, 3):
+    if version not in (0, 1, 2, 3, 4):
         raise ValueError(f"Unsupported history database version {version}")
     if version == 0:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scans'").fetchone():
@@ -168,5 +168,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         _normalize_timestamps(conn)
     if version < 3:
         conn.execute("ALTER TABLE scans ADD COLUMN findings_available INTEGER NOT NULL DEFAULT 1")
-    _recover_missing_analysis(conn, original_schema=version == 0)
+    conn.execute("""CREATE TABLE IF NOT EXISTS scan_origin (
+        scan_id TEXT PRIMARY KEY REFERENCES scans(scan_id) ON DELETE CASCADE,
+        source TEXT NOT NULL CHECK (source IN ('live', 'import')),
+        ssid TEXT, subnet TEXT, network_id TEXT
+    )""")
+    if version < 4:
+        _recover_missing_analysis(conn, original_schema=version == 0)
     conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
