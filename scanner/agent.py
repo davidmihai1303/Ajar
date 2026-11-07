@@ -12,7 +12,7 @@ Two ways to use it:
   HTTP server for the Dockerised app (listens on 127.0.0.1 only):
       python3 agent.py serve
       GET  /network                  -> detected network as JSON
-      POST /scan  {"confirm": true}  -> runs a scan of the detected subnet
+      POST /scan  -> requires confirm=true and the network shown for consent
 
 The only privileged step is `sudo -n /usr/local/sbin/netcheck-nmap <cidr>`,
 which sudoers allows without a password for members of the `netcheck` group.
@@ -50,12 +50,18 @@ def allowlist_for(info: NetworkInfo) -> list:
     return [info.subnet] + [e.strip() for e in extra.split(",") if e.strip()]
 
 
-def run_scan(confirm: bool, target: str = "") -> dict:
-    info: NetworkInfo = detect_network()
-    net = check_scope(target or info.subnet, allowlist_for(info), confirm)
+def run_scan(confirm: bool, target: str = "", *, expected_network: dict | None = None) -> dict:
     if not _scan_lock.acquire(blocking=False):
         raise ScanError("A scan is already running.")
     try:
+        info = detect_network()
+        net = check_scope(target or info.subnet, allowlist_for(info), confirm)
+        if expected_network is not None and expected_network != {
+            "interface": info.interface, "subnet": info.subnet,
+            "gateway": info.gateway or None, "ssid": info.ssid or None,
+        }:
+            raise ScopeError("The network no longer matches your confirmation. Check it and confirm again.",
+                             "Rețeaua nu mai corespunde confirmării tale. Verific-o și confirmă din nou.")
         result = subprocess.run(["sudo", "-n", WRAPPER, str(net)],
                                 capture_output=True, text=True, timeout=SCAN_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -212,8 +218,12 @@ class Handler(BaseHTTPRequestHandler):
         # Deliberately ignores any target sent by the client: the agent always
         # scans the subnet it detects itself.
         confirm: bool = isinstance(body, dict) and body.get("confirm") is True
+        expected = body.get("expected_network") if isinstance(body, dict) else None
         try:
-            self._send(200, run_scan(confirm))
+            if not isinstance(expected, dict):
+                raise ScopeError("Check the current network and confirm it before scanning.",
+                                 "Verifică rețeaua curentă și confirm-o înainte de scanare.")
+            self._send(200, run_scan(confirm, expected_network=expected))
         except ScopeError as e:
             self._send(403, {"error": "refused", "en": e.en, "ro": e.ro})
         except ScanError as e:

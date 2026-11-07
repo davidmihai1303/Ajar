@@ -286,10 +286,18 @@ class AgentHttpTests(unittest.TestCase):
         return result
 
     def test_app_request_starts_scan(self):
-        status, _ = self.post(b'{"confirm": true}', {"Host": f"127.0.0.1:{self.port}",
-                                                      "Content-Type": "application/json"})
+        network = {"interface": "wlp2s0", "subnet": HOTSPOT_NET, "gateway": None, "ssid": None}
+        body = json.dumps({"confirm": True, "expected_network": network}).encode()
+        status, _ = self.post(body, {"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json"})
         self.assertEqual(status, 200)
-        self.scan.assert_called_once_with(True)
+        self.scan.assert_called_once_with(True, expected_network=network)
+
+    def test_bare_confirmation_is_refused(self):
+        status, refusal = self.post(b'{"confirm": true}', {"Host": f"127.0.0.1:{self.port}",
+                                                           "Content-Type": "application/json"})
+        self.assertEqual(status, 403)
+        self.assertTrue(refusal["ro"] and refusal["en"])
+        self.scan.assert_not_called()
 
     def test_cross_site_simple_request_blocked(self):
         status, _ = self.post(b'{"confirm": true}', {"Host": f"127.0.0.1:{self.port}",
@@ -307,6 +315,21 @@ class AgentHttpTests(unittest.TestCase):
 
 
 class RunScanTests(unittest.TestCase):
+    def test_only_the_confirmed_network_can_be_dispatched(self):
+        info = agent.NetworkInfo("wlan0", "172.20.10.9", HOTSPOT_NET, "", "Team")
+        approved = {"interface": "wlan0", "subnet": HOTSPOT_NET, "gateway": None, "ssid": "Team"}
+        result = mock.Mock(returncode=0, stdout="/tmp/fixture.xml", stderr="")
+        with mock.patch.object(agent, "detect_network", return_value=info), \
+                mock.patch.object(agent.subprocess, "run", return_value=result) as dispatch:
+            for key in approved:
+                with self.subTest(key=key), self.assertRaises(ScopeError):
+                    agent.run_scan(True, expected_network={**approved, key: "different"})
+            with self.assertRaises(ScopeError):
+                agent.run_scan(True, expected_network={})
+            dispatch.assert_not_called()
+            self.assertEqual(agent.run_scan(True, expected_network=approved)["target"], HOTSPOT_NET)
+            dispatch.assert_called_once()
+
     def test_wrapper_without_output_is_a_clear_error(self):
         info = agent.NetworkInfo("wlp2s0", "172.20.10.9", HOTSPOT_NET, "172.20.10.1", "RSH-Byte_me")
         empty = mock.Mock(returncode=0, stdout="", stderr="")
