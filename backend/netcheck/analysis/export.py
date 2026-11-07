@@ -2,12 +2,11 @@
 import csv
 from collections import defaultdict
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from .models import Finding, ScanResult
 from .parser import DEFAULT_MAX_XML_BYTES, parse_scan
 from .privacy import mask_macs_in_text
-from .publication import CSV_NAMES, publish_csvs
+from .publication import CSV_NAMES, csv_publication
 from .rules import evaluate_devices
 from .scoring import compute_score
 
@@ -64,9 +63,9 @@ def export_folder(folder_path: str | Path, out_dir: str | Path,
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     findings_path, scores_path = (output / name for name in CSV_NAMES)
-    with TemporaryDirectory(dir=output) as tmp:
-        staged_findings = Path(tmp) / findings_path.name
-        staged_scores = Path(tmp) / scores_path.name
+    with csv_publication(output) as staged:
+        staged_findings = staged / findings_path.name
+        staged_scores = staged / scores_path.name
         with (staged_findings.open("w", encoding="utf-8", newline="") as findings_file,
               staged_scores.open("w", encoding="utf-8", newline="") as scores_file):
             findings_writer = csv.writer(findings_file)
@@ -77,5 +76,4 @@ def export_folder(folder_path: str | Path, out_dir: str | Path,
                 _, findings, score = analyze_file(path, max_bytes)
                 scores_writer.writerow((label, "ERROR" if score is None else score))
                 findings_writer.writerows((label, f.ip, f.port, f.code, f.severity) for f in findings)
-        publish_csvs(Path(tmp), output)
     return str(findings_path), str(scores_path)
