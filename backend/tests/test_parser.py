@@ -136,6 +136,26 @@ def test_device_type_guesses():
     assert device(scan("V3_small_office.xml"), "192.168.1.10").device_type == "printer"
 
 
+@pytest.mark.parametrize("vendor, hostname, product, expected", [
+    ("Apple, Inc.", "davids-macbook.local", "", "computer"),
+    ("Apple, Inc.", "living-room-appletv", "AirTunes", "tv"),
+    ("Apple, Inc.", "", "", "unknown"),
+    ("", "", "Apple AirPlay receiver", "unknown"),
+    ("", "", "AirTunes rtspd", "unknown"),
+    ("", "", "Generic RTSP server", "camera"),
+    ("Hikvision", "camera-front", "", "camera"),
+])
+def test_rtsp_device_type_preserves_service_evidence(vendor, hostname, product, expected):
+    hosts = ('<host><status state="up"/><address addrtype="ipv4" addr="192.0.2.1"/>'
+             f'<address addrtype="mac" addr="02:00:00:01:02:03" vendor="{vendor}"/>'
+             f'<hostnames><hostname name="{hostname}"/></hostnames><ports>'
+             f'<port protocol="tcp" portid="7000"><state state="open"/><service name="rtsp" product="{product}"/>'
+             '</port></ports></host>')
+    dev = parse_bytes(nmap_xml(hosts), "stream.xml").devices[0]
+    assert dev.device_type == expected
+    assert [(p.port, p.service) for p in dev.open_ports] == [(7000, "rtsp")]
+
+
 # ------------------------------------------------------------ privacy (NFR-02)
 
 @pytest.mark.parametrize("name", GOOD_FILES)

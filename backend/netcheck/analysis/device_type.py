@@ -20,10 +20,13 @@ def _has(text: str, needles: tuple) -> bool:
 def guess_device_type(vendor: str, hostname: str, ports) -> str:
     v = (vendor or "").lower()
     h = (hostname or "").lower()
-    services = {p.service for p in ports if p.is_open}
+    open_ports = [p for p in ports if p.is_open]
+    services = {p.service for p in open_ports}
 
-    if "rtsp" in services or _has(v, _CAMERA_VENDORS) or _has(h, ("camera", "cam-", "ipcam", "nvr")):
+    if _has(v, _CAMERA_VENDORS) or _has(h, ("camera", "cam-", "ipcam", "nvr")):
         return "camera"
+    if _has(h, ("macbook", "imac", "mac-mini", "mac-studio", "mac-pro")):
+        return "computer"
     if services & {"jetdirect", "ipp"} or _has(v, _PRINTER_VENDORS) or "printer" in h:
         return "printer"
     if _has(v, _ROUTER_VENDORS) or _has(h, ("router", "gateway", "fritz", "access-point")):
@@ -36,8 +39,12 @@ def guess_device_type(vendor: str, hostname: str, ports) -> str:
         return "tv"
     if _has(h, ("iphone", "android", "galaxy", "pixel", "phone")):
         return "phone"
-    if services & {"ms-wbt-server", "microsoft-ds", "netbios-ssn", "vnc"} or _has(h, ("laptop", "desktop", "pc-", "macbook")):
+    if services & {"ms-wbt-server", "microsoft-ds", "netbios-ssn", "vnc"} or _has(h, ("laptop", "desktop", "pc-")):
         return "computer"
+    # Nmap also reports AirPlay receivers as RTSP. Their service and ports still reach the rules.
+    rtsp_banners = (f"{p.product} {p.extrainfo}".lower() for p in open_ports if p.service == "rtsp")
+    if not v.startswith("apple") and any(not _has(banner, ("airplay", "airtunes")) for banner in rtsp_banners):
+        return "camera"
     if services & {"ssh", "mysql", "postgresql", "redis", "mongodb", "ftp"}:
         return "server"
     return "unknown"
