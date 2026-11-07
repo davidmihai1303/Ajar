@@ -1,4 +1,7 @@
 """Parser tests: Validation Set facts, hostile and broken input, MAC masking, determinism (FR-05, NFR-02, NFR-03, NFR-05)."""
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -206,7 +209,8 @@ def test_mac_addresses_are_masked_in_all_scan_text_and_filenames(tmp_path):
              f'<script id="http-title"><elem key="title">Login {raw}</elem></script>'
              f'<script id="extra-{raw}" output="MAC:{raw}:"/></port></ports></host>')
     report = nmap_xml(hosts)
-    path = tmp_path / f"scan-{raw}.xml"
+    file_raw = raw.replace(":", "-") if os.name == "nt" else raw
+    path = tmp_path / f"scan-{file_raw}.xml"
     missing = parse_scan(path)
     path.write_bytes(report)
     result = parse_scan(path)
@@ -234,6 +238,16 @@ def test_ipv6_interface_label_does_not_expose_a_mac():
 
 
 # ------------------------------------------------------------ hostile input (NFR-03)
+
+def test_parser_requires_defusedxml():
+    result = subprocess.run(
+        [sys.executable, "-S", "-c",
+         "import sys; sys.modules['defusedxml'] = None; import netcheck.analysis.parser"],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "defusedxml" in result.stderr
+
 
 def test_xxe_external_entity_is_refused(tmp_path):
     secret = tmp_path / "secret.txt"
