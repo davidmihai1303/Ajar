@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -10,6 +11,23 @@ from netcheck.analysis.models import Device, Finding, ScanResult
 from netcheck.analysis.privacy import mask_macs_in_text
 from netcheck.analysis.rules import evaluate_devices
 from netcheck.analysis.scoring import compute_score
+
+
+def utc_timestamp(value: str) -> str:
+    """Store history timestamps in UTC; old timezone-free timestamps are interpreted as UTC."""
+    instant = datetime.fromisoformat(value)
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=timezone.utc)
+    return instant.astimezone(timezone.utc).isoformat()
+
+
+def scan_start_time(started: int | None) -> datetime | None:
+    if started is None:
+        return None
+    try:
+        return datetime.fromtimestamp(started, tz=timezone.utc)
+    except (ValueError, OverflowError, OSError, TypeError):
+        return None
 
 
 def public_scan_id(scan_id: str) -> str:

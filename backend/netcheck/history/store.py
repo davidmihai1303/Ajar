@@ -19,7 +19,7 @@ from netcheck.analysis.privacy import mask_mac, mask_macs_in_text, mask_scan_fil
 from netcheck.config import DB_PATH
 
 from .diff import ScanDiff, compute_diff
-from .records import ScanRecord, analysis_for, public_scan_id
+from .records import ScanRecord, analysis_for, public_scan_id, scan_start_time, utc_timestamp
 from .schema import ensure_schema
 
 
@@ -60,13 +60,11 @@ def save_scan(
 
     fname = mask_scan_filename(record.file)
     started = record.scan.started
-    scan_time = None
-    if started is not None:
-        try:
-            scan_time = datetime.fromtimestamp(started, tz=timezone.utc)
-        except (ValueError, OverflowError, OSError):
-            started = None
-    created_at = record.created_at or (scan_time or datetime.now(timezone.utc)).isoformat()
+    scan_time = scan_start_time(started)
+    if scan_time is None:
+        started = None
+    created_at = (utc_timestamp(record.created_at) if record.created_at
+                  else (scan_time or datetime.now(timezone.utc)).isoformat())
     all_findings, final_score = analysis_for(scan, findings, score) if scan.ok else ((), None)
     init_db(db_path)
     with _get_connection(db_path) as conn:
@@ -263,7 +261,9 @@ def get_latest_scan(db_path: str = DB_PATH) -> Optional[ScanRecord]:
     init_db(db_path)
     with _get_connection(db_path) as conn:
         conn.execute("BEGIN")
-        latest = conn.execute("SELECT scan_id FROM scans ORDER BY created_at DESC, rowid DESC LIMIT 1").fetchone()
+        latest = conn.execute(
+            "SELECT scan_id FROM scans WHERE created_at != '' ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        ).fetchone()
         return _read_scan(conn, latest["scan_id"]) if latest else None
 
 
@@ -299,7 +299,7 @@ def get_score_trend(db_path: str = DB_PATH) -> list[dict]:
             """
             SELECT scan_id, created_at, file_name, score
             FROM scans
-            WHERE error IS NULL AND score IS NOT NULL
+            WHERE error IS NULL AND score IS NOT NULL AND created_at != ''
             ORDER BY created_at ASC, rowid ASC
             """
         ).fetchall()
@@ -353,7 +353,7 @@ def get_scan_diff_with_previous(scan_id: str, db_path: str = DB_PATH) -> ScanDif
         previous = conn.execute(
             """
             SELECT p.scan_id FROM scans p JOIN scans c ON c.scan_id = ?
-            WHERE p.error IS NULL AND (p.created_at, p.rowid) < (c.created_at, c.rowid)
+            WHERE p.error IS NULL AND p.created_at != '' AND (p.created_at, p.rowid) < (c.created_at, c.rowid)
             ORDER BY p.created_at DESC, p.rowid DESC LIMIT 1
             """,
             (scan_id,),

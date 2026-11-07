@@ -10,7 +10,7 @@ import pytest
 from netcheck.analysis.export import analyze_file
 from netcheck.analysis.parser import parse_bytes
 from netcheck.history import compute_diff, get_scan, get_scan_diff_with_previous, get_score_trend, list_scans, save_scan
-from netcheck.history import store
+from netcheck.history import ScanRecord, store
 
 FIXTURES = Path(__file__).parent / "fixtures" / "validation"
 
@@ -61,6 +61,52 @@ def test_round_trip_preserves_all_scan_and_finding_fields(tmp_path):
     port = replace(device.ports[0], extrainfo="release edition", scripts={"http-title": "Router", "inventory": "v3"})
     scan = replace(original, devices=(replace(device, ports=(port,)), replace(device, ports=())))
     assert get_scan(save_scan(scan, db_path=db), db).scan == scan
+
+
+@pytest.mark.parametrize("upgrade", [False, True], ids=["new-records", "existing-database"])
+def test_history_orders_equivalent_and_mixed_offsets_by_instant(tmp_path, upgrade):
+    db = tmp_path / "history.sqlite"
+    scan, findings, score = analyze_file(FIXTURES / "V6a_before.xml")
+    stamps = {
+        "later": "2026-05-01T08:30:00.000001Z",
+        "early": "2026-05-01T10:00:00+03:00",
+        "tied": "2026-05-01T07:00:00",
+    }
+    for sid, stamp in stamps.items():
+        save_scan(ScanRecord(scan, findings, score, created_at=stamp), scan_id=sid, db_path=db)
+    if upgrade:
+        with sqlite3.connect(db) as conn:
+            conn.executemany("UPDATE scans SET created_at = ? WHERE scan_id = ?",
+                             [(stamp, sid) for sid, stamp in stamps.items()])
+            conn.execute("PRAGMA user_version = 1")
+    expected = ["later", "tied", "early"]
+    assert [row["scan_id"] for row in list_scans(db)] == expected
+    assert [row["scan_id"] for row in store.get_device_history(scan.devices[0].ip, db)] == expected
+    assert [row["scan_id"] for row in get_score_trend(db)] == expected[::-1]
+    assert store.get_latest_scan(db).scan_id == "later"
+    assert get_scan_diff_with_previous("later", db).prev_scan_id == "tied"
+    assert get_scan_diff_with_previous("tied", db).prev_scan_id == "early"
+    assert get_scan_diff_with_previous("early", db) is None
+    assert get_scan("early", db).created_at == get_scan("tied", db).created_at == "2026-05-01T07:00:00+00:00"
+
+
+def test_invalid_legacy_dates_do_not_block_other_history(tmp_path):
+    db = tmp_path / "history.sqlite"
+    scan = analyze_file(FIXTURES / "V6a_before.xml")[0]
+    for sid in ("dated", "undated"):
+        save_scan(scan, scan_id=sid, db_path=db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE scans SET created_at = 'invalid'")
+        conn.execute("UPDATE scans SET started = NULL WHERE scan_id = 'undated'")
+        conn.execute("PRAGMA user_version = 1")
+    assert get_scan("dated", db).created_at == datetime.fromtimestamp(scan.started, timezone.utc).isoformat()
+    assert get_scan("undated", db).created_at == ""
+    assert get_scan_diff_with_previous("dated", db) is None
+    assert get_scan_diff_with_previous("undated", db) is None
+    assert [entry["scan_id"] for entry in get_score_trend(db)] == ["dated"]
+    with pytest.raises(ValueError):
+        save_scan(ScanRecord(scan, created_at="invalid"), scan_id="dated", db_path=db)
+    assert store.get_latest_scan(db).scan_id == "dated"
 
 
 def test_private_explicit_id_and_out_of_range_scan_time(tmp_path):

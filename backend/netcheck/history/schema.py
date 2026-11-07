@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from netcheck.analysis.privacy import mask_scan_filename
 
-from .records import public_scan_id
+from .records import public_scan_id, scan_start_time, utc_timestamp
 
 
 _CREATE = (
@@ -108,18 +108,32 @@ def _upgrade_original(conn: sqlite3.Connection) -> None:
                 conn.execute(f"UPDATE {table} SET scan_id = ? WHERE scan_id = ?", (public_id, sid))
 
 
+def _normalize_timestamps(conn: sqlite3.Connection) -> None:
+    for sid, created_at, started in conn.execute("SELECT scan_id, created_at, started FROM scans").fetchall():
+        try:
+            value = utc_timestamp(created_at)
+        except (TypeError, ValueError, OverflowError):
+            # Undated records stay visible in history but cannot establish a chronological comparison.
+            instant = scan_start_time(started)
+            value = instant.isoformat() if instant else ""
+        if value != created_at:
+            conn.execute("UPDATE scans SET created_at = ? WHERE scan_id = ?", (value, sid))
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    if conn.execute("PRAGMA user_version").fetchone()[0] == 1:
+    if conn.execute("PRAGMA user_version").fetchone()[0] == 2:
         return
     conn.execute("BEGIN IMMEDIATE")
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version == 1:  # Another initializer finished while we were waiting.
+    if version == 2:  # Another initializer finished while we were waiting.
         return
-    if version != 0:
+    if version not in (0, 1):
         raise ValueError(f"Unsupported history database version {version}")
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scans'").fetchone():
-        _upgrade_original(conn)
-    else:
-        for statement in _CREATE:
-            conn.execute(statement)
-    conn.execute("PRAGMA user_version = 1")
+    if version == 0:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scans'").fetchone():
+            _upgrade_original(conn)
+        else:
+            for statement in _CREATE:
+                conn.execute(statement)
+    _normalize_timestamps(conn)
+    conn.execute("PRAGMA user_version = 2")
