@@ -221,6 +221,14 @@ docker compose run --rm app netcheck analyze /data/input/test_set --out /data/in
 ```
 
 An unreadable file gets `ERROR` in `scores.csv`, and the other files are still processed.
+If masking gives two scans the same filename, the exporter adds a number before the extension.
+`netcheck analyze-file <path>` shows the same label for that file in its folder.
+
+The output filesystem must support symbolic links. Both CSV names point into the local
+`.netcheck-csv` directory so one switch publishes the complete pair. A successful export removes
+the previous CSVs. If the process is killed, rerun the export before sharing the folder to clear
+any interrupted work. To move standalone CSVs
+to another drive, copy their contents (for example, `cp -L findings.csv scores.csv /path/to/destination/`).
 
 ### Live scan
 

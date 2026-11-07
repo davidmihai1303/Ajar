@@ -5,6 +5,8 @@ not which exact device it is. The last three bytes identify the device and are h
 """
 import ipaddress
 import re
+from collections.abc import Iterable
+from datetime import datetime
 
 _HEX_PAIR = re.compile(r"^[0-9A-F]{2}$")
 _MAC_IN_TEXT = re.compile(
@@ -16,6 +18,10 @@ _ADDRESS_IN_TEXT = re.compile(
     r"(?P<ipv6>(?<![0-9a-z])(?:[0-9a-f]{0,4}:){6,8}[0-9a-f]{0,4}(?![0-9a-f:]))|"
     + _MAC_IN_TEXT.pattern, re.I | re.ASCII
 )
+_MAC_LABEL = re.compile(
+    r"(?<![0-9a-z])(?:mac(?:[-_ ]?addr(?:ess)?)?|bssid|eui[-_ ]?48)[ ._:=-]*$", re.I | re.ASCII
+)
+_MAC_SEPARATORS = str.maketrans("", "", ":.-")
 
 
 def mask_mac(mac: str) -> str:
@@ -30,8 +36,8 @@ def mask_mac(mac: str) -> str:
     return ":".join(parts[:3] + ["xx", "xx", "xx"])
 
 
-def mask_macs_in_text(text: str) -> str:
-    """Mask MACs embedded in labels, filenames and other scan text."""
+def mask_macs_in_text(text: str, *, filename_timestamps: frozenset[str] = frozenset()) -> str:
+    """Mask MACs in text. Only the filename formatter supplies verified timestamp exceptions."""
     def replace(match: re.Match) -> str:
         value = match.group()
         if match.lastgroup == "ipv6":
@@ -41,6 +47,24 @@ def mask_macs_in_text(text: str) -> str:
                 # A label or punctuation can add a colon next to a real MAC.
                 return _MAC_IN_TEXT.sub(lambda mac: mask_mac(mac.group()), value)
             return value
+        if value in filename_timestamps and not _MAC_LABEL.search(text, 0, match.start()):
+            return value
         return mask_mac(value)
 
     return _ADDRESS_IN_TEXT.sub(replace, text)
+
+
+def mask_scan_filename(name: str, scan_macs: Iterable[str] = ()) -> str:
+    """Keep calendar timestamps in filenames unless the report or filename identifies a MAC."""
+    timestamps = set()
+    for match in _MAC_IN_TEXT.finditer(name):
+        token = match.group()
+        if len(token) == 12 and token.isdecimal():
+            try:
+                datetime.strptime(token, "%Y%m%d%H%M")
+            except ValueError:
+                continue
+            timestamps.add(token)
+    if timestamps:
+        timestamps.difference_update(mac.strip().translate(_MAC_SEPARATORS) for mac in scan_macs)
+    return mask_macs_in_text(name, filename_timestamps=frozenset(timestamps))

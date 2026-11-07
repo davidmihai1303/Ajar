@@ -1,12 +1,30 @@
 """Rule traps: tunnel=ssl, filtered, open|filtered UDP, SMB 139+445, UNKNOWN_DEVICE, outdated versions."""
 import unittest
 from netcheck.analysis.models import Device, Port
+from netcheck.analysis.parser import MAX_TEXT_CHARS, parse_bytes
 from netcheck.analysis.rules import evaluate_device, evaluate_devices
 from netcheck.analysis.scoring import compute_score
 from netcheck.analysis.versions import is_outdated_service
 
 
 class TestRules(unittest.TestCase):
+    def test_admin_evidence_survives_a_long_title(self):
+        for position in (MAX_TEXT_CHARS - 2, MAX_TEXT_CHARS + 20, 3000):
+            with self.subTest(position=position):
+                title = "x" * position + "aDmIn 02:00:00:01:02:03"
+                xml = ('<nmaprun><host><status state="up"/><address addrtype="ipv4" addr="192.0.2.1"/>'
+                       '<hostnames><hostname name="web"/></hostnames><ports><port protocol="tcp" portid="80">'
+                       '<state state="open"/><service name="http"/><script id="http-title">'
+                       f'<elem key="title">{title}</elem></script></port></ports></host></nmaprun>')
+                scan = parse_bytes(xml.encode(), "web.xml")
+                excerpt = scan.devices[0].ports[0].http_title
+                self.assertLessEqual(len(excerpt), MAX_TEXT_CHARS)
+                self.assertIn("aDmIn 02:00:00:xx:xx:xx", excerpt)
+                findings = evaluate_devices(scan.devices)
+                self.assertEqual([f.code for f in findings], ["HTTP_ADMIN_CLEARTEXT"])
+                self.assertIn(excerpt, findings[0].evidence)
+                self.assertEqual(compute_score(findings), 90)
+
     def test_https_ssl_tunnel_not_admin_cleartext(self):
         """HTTPS (tunnel='ssl') must NOT trigger HTTP_ADMIN_CLEARTEXT even if title says 'Admin Login'."""
         dev = Device(
@@ -142,6 +160,9 @@ class TestRules(unittest.TestCase):
             ("OpenSSH", "6.9-7.3", True), ("OpenSSH", "7.2 to 7.4", False),
             ("vsftpd", "2.3.4.1", False), ("vsftpd", "2.3.4-1ubuntu1", True),
             ("Apache httpd", "unknown build 2.2", False), ("Apache httpd", "2.2.x", True),
+            ("Samba smbd", "3.0.14a", True), ("Samba smbd", "3.0.20b (Debian)", True),
+            ("Samba smbd", "3.X (or newer)", False), ("Samba smbd", "3.X (newer releases possible)", False),
+            ("Samba smbd", "3.0.14a - 4.0.0", False), ("vsftpd", "2.3.4a", False),
         ]
         for product, version, expected in cases:
             with self.subTest(product=product, version=version):
@@ -170,6 +191,24 @@ class TestRules(unittest.TestCase):
         # Samba <= 3.x
         self.assertTrue(is_outdated_service("Samba smbd", "3.0.24"))
         self.assertFalse(is_outdated_service("Samba smbd", "4.15"))
+
+    def test_upper_bound_must_qualify_for_the_specific_catalog_rule(self):
+        for version, expected_score in [
+            ("3.6 or older", 70), ("3.6 or earlier", 70), ("3.X (OR OLDER)", 70),
+            ("3.0.14a (Debian) and earlier", 70), ("3.6 or older (Debian)", 70), ("4.0 or older", 90),
+            ("3.6 or older (higher versions possible)", 90),
+            ("3.6 or newer", 90), ("3.6 or later", 90), ("3.6 or newer or older", 90),
+        ]:
+            with self.subTest(version=version):
+                nas = Device(ip="192.0.2.1", hostname="nas", ports=(
+                    Port("tcp", 445, "open", "microsoft-ds", "Samba smbd", version),
+                ))
+                self.assertEqual(compute_score(evaluate_device(nas)), expected_score)
+        self.assertTrue(is_outdated_service("OpenSSH", "7.3 or older"))
+        self.assertFalse(is_outdated_service("OpenSSH", "7.4 or older"))
+        self.assertTrue(is_outdated_service("Apache httpd", "2.2.x or earlier"))
+        self.assertTrue(is_outdated_service("Microsoft IIS", "7.5 (or earlier)"))
+        self.assertFalse(is_outdated_service("vsftpd", "2.3.4 or older"))
 
 
 if __name__ == "__main__":

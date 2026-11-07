@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from netcheck import config
-from netcheck.analysis.export import analyze_file, export_folder
+from netcheck.analysis.export import analyze_file, export_folder, single_file_label
 from netcheck.analysis.privacy import mask_macs_in_text
 
 
@@ -33,11 +33,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     scan, findings, score = analyze_file(args.file, max_bytes=config.MAX_XML_BYTES)
+    label = single_file_label(args.file, scan.file, max_bytes=config.MAX_XML_BYTES)
     if not scan.ok:
-        print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), scan.file,
+        print(_text("EROARE: fișierul nu poate fi analizat", "ERROR: could not analyze file"), label,
               file=sys.stderr)
         return 1
-    print(f"{_text('Fișier', 'File')}: {scan.file}")
+    print(f"{_text('Fișier', 'File')}: {label}")
     print(f"{_text('Scor', 'Score')}: {score}")
     print(f"{_text('Constatări', 'Findings')}: {len(findings)}")
     for finding in findings:

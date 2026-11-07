@@ -25,22 +25,39 @@ from xml.etree.ElementTree import Element, ParseError
 from defusedxml import DefusedXmlException
 from defusedxml import ElementTree as SafeET
 
+from .catalog import HTTP_ADMIN_TITLE
 from .device_type import guess_device_type
 from .models import (ERROR_NOT_NMAP, ERROR_TOO_LARGE, ERROR_UNREADABLE, ERROR_UNSAFE,
                      Device, Port, ScanResult)
-from .privacy import mask_mac, mask_macs_in_text
+from .privacy import mask_mac, mask_macs_in_text, mask_scan_filename
 
 DEFAULT_MAX_XML_BYTES = 20 * 1024 * 1024
 MAX_TEXT_CHARS = 512
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
-def clean_text(value: Optional[str]) -> str:
-    """Untrusted text from the scan -> one line, no control characters, bounded length."""
+def _normalized_text(value: Optional[str]) -> str:
     if not value:
         return ""
     text = " ".join(_CONTROL_CHARS.sub(" ", value).split())
-    return mask_macs_in_text(text)[:MAX_TEXT_CHARS]
+    return mask_macs_in_text(text)
+
+
+def clean_text(value: Optional[str]) -> str:
+    """Untrusted text from the scan -> one line, no control characters, bounded length."""
+    return _normalized_text(value)[:MAX_TEXT_CHARS]
+
+
+def _title_excerpt(value: Optional[str]) -> str:
+    text = _normalized_text(value)
+    if len(text) <= MAX_TEXT_CHARS:
+        return text
+    match = HTTP_ADMIN_TITLE.search(text)
+    if match and match.end() > MAX_TEXT_CHARS:
+        # Keep an actual excerpt containing the evidence, including a word crossing the cutoff.
+        start = match.start() - MAX_TEXT_CHARS // 2
+        return "…" + text[start:start + MAX_TEXT_CHARS - 1]
+    return text[:MAX_TEXT_CHARS]
 
 
 def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
@@ -50,23 +67,25 @@ def parse_scan(path: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
         with open(path, "rb") as fh:
             data = fh.read(max(0, max_bytes + 1))
     except OSError:
-        return ScanResult(file=mask_macs_in_text(name), error=ERROR_UNREADABLE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNREADABLE)
     return parse_bytes(data, name, max_bytes)
 
 
 def parse_bytes(data: bytes, file: str, max_bytes: int = DEFAULT_MAX_XML_BYTES) -> ScanResult:
     """Parse a report already in memory using the same size limit as the file reader."""
-    file = mask_macs_in_text(os.path.basename(file))
+    name = os.path.basename(file)
     if len(data) > max_bytes:
-        return ScanResult(file=file, error=ERROR_TOO_LARGE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_TOO_LARGE)
     try:
         root = SafeET.fromstring(data)
     except DefusedXmlException:
-        return ScanResult(file=file, error=ERROR_UNSAFE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNSAFE)
     except (ParseError, ValueError, LookupError):
-        return ScanResult(file=file, error=ERROR_UNREADABLE)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_UNREADABLE)
     if root.tag != "nmaprun":
-        return ScanResult(file=file, error=ERROR_NOT_NMAP)
+        return ScanResult(file=mask_scan_filename(name), error=ERROR_NOT_NMAP)
+    addresses = root.iterfind("host/address[@addrtype='mac']")
+    file = mask_scan_filename(name, (address.get("addr", "") for address in addresses))
     if root.find("runstats/finished[@exit='error']") is not None:
         return ScanResult(file=file, error=ERROR_UNREADABLE)
 
@@ -141,7 +160,7 @@ def _parse_scripts(port: Element) -> dict:
             continue
         if script_id == "http-title":
             title = script.find("elem[@key='title']")
-            scripts[script_id] = clean_text(title.text) if title is not None else ""
+            scripts[script_id] = _title_excerpt(title.text) if title is not None else ""
         else:
             scripts[script_id] = clean_text(script.get("output"))
     return scripts
