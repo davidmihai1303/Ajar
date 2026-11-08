@@ -339,5 +339,144 @@ class RunScanTests(unittest.TestCase):
                 agent.run_scan(True)
 
 
+# ---------------------------------------------------------------- stage 2: host discovery (--discover)
+
+DISCOVERY_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sn -n --max-rate 100 -oX - 172.20.10.0/28">
+<host><status state="up"/><address addr="172.20.10.1" addrtype="ipv4"/>
+  <address addr="AA:BB:CC:11:22:33" addrtype="mac" vendor="Apple"/></host>
+<host><status state="up"/><address addr="172.20.10.11" addrtype="ipv4"/>
+  <address addr="3C:A9:F4:44:55:66" addrtype="mac" vendor="Intel Corporate"/></host>
+<host><status state="up"/><address addr="172.20.10.9" addrtype="ipv4"/></host>
+<host><status state="down"/><address addr="172.20.10.5" addrtype="ipv4"/></host>
+</nmaprun>"""
+INFO = agent.NetworkInfo("wlp2s0", "172.20.10.9", HOTSPOT_NET, "172.20.10.1", "RSH-Byte_me")
+EXPECTED = {"interface": "wlp2s0", "subnet": HOTSPOT_NET, "gateway": "172.20.10.1", "ssid": "RSH-Byte_me"}
+
+
+class WrapperDiscoverTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.wrapper = load_wrapper()
+
+    def test_only_two_argument_forms_are_accepted(self):
+        self.assertEqual(self.wrapper.parse_args([HOTSPOT_NET]), ("scan", HOTSPOT_NET))
+        self.assertEqual(self.wrapper.parse_args(["--discover", HOTSPOT_NET]), ("discover", HOTSPOT_NET))
+        for bad in ([], ["--discover"], ["-sV", HOTSPOT_NET], ["--script=x", HOTSPOT_NET], [HOTSPOT_NET, "-p1"],
+                    ["--discover", HOTSPOT_NET, "-sV"], ["--other", HOTSPOT_NET], ["-oX", "/etc/passwd"]):
+            with self.subTest(argv=bad), mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+                self.wrapper.parse_args(bad)
+
+    def test_discover_command_is_fixed_host_discovery(self):
+        cmd = self.wrapper.discover_command("/usr/bin/nmap", self.wrapper.ipaddress.ip_network(HOTSPOT_NET))
+        self.assertEqual(cmd, ["/usr/bin/nmap", "-sn", "-n", "--max-rate", "100", "-oX", "-", HOTSPOT_NET])
+        for forbidden in ("-sS", "-sU", "-sV", "-p", "--script"):
+            self.assertNotIn(forbidden, cmd)
+
+    def run_main(self, argv, subnet=HOTSPOT_NET):
+        net = self.wrapper.ipaddress.ip_network(subnet)
+        done = mock.Mock(returncode=0, stdout=DISCOVERY_XML, stderr="")
+        with mock.patch.object(self.wrapper.os, "geteuid", return_value=0, create=True), \
+                mock.patch.object(self.wrapper.sys, "argv", ["netcheck-nmap"] + argv), \
+                mock.patch.object(self.wrapper, "current_subnet", return_value=net), \
+                mock.patch.object(self.wrapper, "first_existing", return_value="/usr/bin/nmap"), \
+                mock.patch.object(self.wrapper.subprocess, "run", return_value=done) as run, \
+                mock.patch.object(self.wrapper.os, "makedirs") as makedirs, \
+                mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as out, \
+                mock.patch("sys.stderr"):
+            self.wrapper.main()
+        return run, makedirs, out.getvalue()
+
+    def test_discover_prints_xml_and_writes_no_file(self):
+        run, makedirs, out = self.run_main(["--discover", HOTSPOT_NET])
+        self.assertEqual(run.call_args.args[0][1:3], ["-sn", "-n"])
+        makedirs.assert_not_called()
+        self.assertIn("<nmaprun", out)
+
+    def test_discover_keeps_the_same_scope_checks(self):
+        for target in ("8.8.8.0/24", "10.0.0.0/8", "192.168.1.0/24", "172.20.10.0/27"):
+            with self.subTest(target=target), self.assertRaises(SystemExit):
+                self.run_main(["--discover", target])
+
+
+class AgentDiscoverTests(unittest.TestCase):
+    def test_parse_discovery_keeps_up_hosts_and_drops_the_scanner_itself(self):
+        devices = agent.parse_discovery(DISCOVERY_XML, own_ip="172.20.10.9")
+        self.assertEqual([d["ip"] for d in devices], ["172.20.10.1", "172.20.10.11"])
+        self.assertEqual(devices[0], {"ip": "172.20.10.1", "mac": "aa:bb:cc:11:22:33", "vendor": "Apple"})
+
+    def test_parse_discovery_refuses_entities_garbage_and_huge_input(self):
+        evil = '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><nmaprun>&a;</nmaprun>'
+        for bad in (evil, "<nmaprun><host>", "not xml", "<nmaprun>" + " " * (agent.DISCOVER_MAX_XML + 1)):
+            with self.subTest(bad=bad[:30]), self.assertRaises(agent.ScanError):
+                agent.parse_discovery(bad)
+
+    def test_run_discovery_uses_the_wrapper_discover_mode_on_the_detected_subnet(self):
+        done = mock.Mock(returncode=0, stdout=DISCOVERY_XML, stderr="")
+        with mock.patch.object(agent, "detect_network", return_value=INFO), \
+                mock.patch.object(agent.subprocess, "run", return_value=done) as run:
+            result = agent.run_discovery(True, expected_network=EXPECTED)
+        self.assertEqual(run.call_args.args[0], ["sudo", "-n", agent.WRAPPER, "--discover", HOTSPOT_NET])
+        self.assertEqual(len(result["devices"]), 2)
+
+    def test_run_discovery_needs_confirmation_and_the_same_network(self):
+        with mock.patch.object(agent, "detect_network", return_value=INFO), \
+                mock.patch.object(agent.subprocess, "run") as run:
+            with self.assertRaises(ScopeError):
+                agent.run_discovery(False, expected_network=EXPECTED)
+            with self.assertRaises(ScopeError):
+                agent.run_discovery(True, expected_network={**EXPECTED, "ssid": "Venue"})
+            run.assert_not_called()
+
+    def test_run_discovery_shares_the_scan_lock(self):
+        self.assertTrue(agent._scan_lock.acquire(blocking=False))
+        try:
+            with self.assertRaises(agent.ScanError):
+                agent.run_discovery(True, expected_network=EXPECTED)
+        finally:
+            agent._scan_lock.release()
+
+
+class AgentDiscoverHttpTests(unittest.TestCase):
+    def setUp(self):
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), agent.Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.discovery = mock.patch.object(agent, "run_discovery",
+                                           return_value={"network": {}, "target": HOTSPOT_NET, "devices": []}).start()
+        mock.patch.object(agent.Handler, "log_message", lambda *a: None).start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+        self.server.shutdown()
+        self.server.server_close()
+
+    def post(self, body: dict, headers: dict) -> int:
+        data = json.dumps(body).encode()
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("POST", "/discover", skip_host=True)
+        for key, value in {"Host": f"127.0.0.1:{self.port}", "Content-Type": "application/json",
+                           "Content-Length": str(len(data)), **headers}.items():
+            conn.putheader(key, value)
+        conn.endheaders(data)
+        status = conn.getresponse().status
+        conn.close()
+        return status
+
+    def test_local_client_can_discover(self):
+        self.assertEqual(self.post({"confirm": True, "expected_network": EXPECTED}, {}), 200)
+        self.discovery.assert_called_once_with(True, expected_network=EXPECTED)
+
+    def test_browser_cannot_trigger_discovery(self):
+        self.assertEqual(self.post({"confirm": True, "expected_network": EXPECTED},
+                                   {"Origin": "https://evil.example"}), 403)
+        self.discovery.assert_not_called()
+
+    def test_discovery_needs_the_expected_network(self):
+        self.assertEqual(self.post({"confirm": True}, {}), 403)
+        self.discovery.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

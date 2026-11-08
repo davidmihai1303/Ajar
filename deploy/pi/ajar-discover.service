@@ -1,0 +1,15 @@
+# Template: install_autoscan.sh replaces @USER@ and @REPO@. Who is connected? (no ports)
+[Unit]
+Description=Ajar new-device check (only on a network with saved consent)
+After=network-online.target netcheck-agent.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/deploy/pi/ajar_autoscan.py discover
+# Discovery takes seconds; a new device may start one full scan (a few minutes).
+TimeoutStartSec=20min
+NoNewPrivileges=true
+PrivateTmp=true

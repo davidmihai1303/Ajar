@@ -31,15 +31,21 @@ class StateDirTestCase(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.posts = []
+        self.discovers = []
 
-    def fake_api(self, network=HOTSPOT, scan_status=200):
-        def api(method, path, body=None, timeout=10):
+    def fake_api(self, network=HOTSPOT, scan_status=200, devices=(), discover_status=200):
+        def api(method, path, body=None, timeout=10, base=""):
             if method == "GET" and path == "/api/network":
                 return 200, dict(network)
             if method == "POST" and path == "/api/scans":
                 self.posts.append(body)
                 return scan_status, {"score": 60, "findings": [{}, {}, {}]} if scan_status == 200 else {}
-            raise AssertionError(f"unexpected call {method} {path}")
+            if base == autoscan.AGENT and method == "GET" and path == "/network":
+                return 200, {k: network[k] for k in ("interface", "subnet", "gateway", "ssid")}
+            if base == autoscan.AGENT and method == "POST" and path == "/discover":
+                self.discovers.append(body)
+                return discover_status, {"devices": [dict(d) for d in devices]}
+            raise AssertionError(f"unexpected call {method} {path} {base}")
         return api
 
     def grant(self, network=HOTSPOT, mac=GATEWAY_MAC, answer="DA", days=30):
@@ -199,6 +205,125 @@ class ConsentAndRunTests(StateDirTestCase):
                 mock.patch("sys.stdout", new_callable=io.StringIO):
             autoscan.cmd_revoke(revoke_all=False)
         self.assertEqual(autoscan.load_consents(), [])
+
+
+PHONE = {"ip": "172.20.10.2", "mac": "aa:bb:cc:11:22:33", "vendor": "Apple"}
+LAPTOP = {"ip": "172.20.10.11", "mac": "3c:a9:f4:44:55:66", "vendor": "Intel Corporate"}
+CAMERA = {"ip": "172.20.10.7", "mac": "c0:56:e3:77:88:99", "vendor": "Hikvision"}
+
+
+class DiscoverTests(StateDirTestCase):
+    def discover(self, devices, scan_new=True, now=None, network=HOTSPOT, discover_status=200, mac=GATEWAY_MAC):
+        out = io.StringIO()
+        with mock.patch.object(autoscan, "api", self.fake_api(network, devices=devices, discover_status=discover_status)), \
+                mock.patch.object(autoscan, "gateway_mac", return_value=mac), \
+                mock.patch.object(autoscan, "now_utc", return_value=now or autoscan.now_utc()), \
+                mock.patch("sys.stdout", out):
+            code = autoscan.cmd_discover(scan_new=scan_new)
+        return code, out.getvalue()
+
+    def test_no_consent_means_no_discovery(self):
+        code, out = self.discover([PHONE])
+        self.assertEqual(code, autoscan.EXIT_SKIPPED)
+        self.assertEqual(self.discovers, [])
+        self.assertIn("no consent", out)
+
+    def test_first_run_is_a_silent_baseline(self):
+        self.grant()
+        code, out = self.discover([PHONE, LAPTOP])
+        self.assertEqual(code, autoscan.EXIT_OK)
+        self.assertIn("Initial inventory: 2", out)
+        self.assertNotIn("NEW DEVICE", out)
+        self.assertEqual(self.posts, [])
+
+    def test_discovery_sends_the_agent_network_and_confirmation(self):
+        self.grant()
+        self.discover([PHONE])
+        self.assertEqual(self.discovers, [{"confirm": True, "expected_network": {
+            "interface": "wlan0", "subnet": "172.20.10.0/28", "gateway": "172.20.10.1", "ssid": "RSH-Byte_me"}}])
+
+    def test_new_device_is_logged_and_triggers_one_full_scan(self):
+        self.grant()
+        self.discover([PHONE, LAPTOP])
+        code, out = self.discover([PHONE, LAPTOP, CAMERA])
+        self.assertEqual(code, autoscan.EXIT_OK)
+        self.assertIn("NEW DEVICE on the network: Hikvision, IP 172.20.10.7", out)
+        self.assertNotIn("Apple", out.split("NEW DEVICE")[1])
+        self.assertEqual(len(self.posts), 1)
+
+    def test_known_devices_are_not_reported_again(self):
+        self.grant()
+        self.discover([PHONE])
+        code, out = self.discover([PHONE])
+        self.assertIn("No change", out)
+        self.assertEqual(self.posts, [])
+
+    def test_full_scan_cooldown(self):
+        self.grant()
+        start = autoscan.now_utc()
+        self.discover([PHONE], now=start)
+        self.discover([PHONE, LAPTOP], now=start + dt.timedelta(minutes=1))
+        _, out = self.discover([PHONE, LAPTOP, CAMERA], now=start + dt.timedelta(minutes=11))
+        self.assertEqual(len(self.posts), 1)
+        self.assertIn("ran recently", out)
+        self.discover([PHONE, LAPTOP, CAMERA, {"ip": "172.20.10.8", "mac": "02:00:00:00:00:01", "vendor": ""}],
+                      now=start + dt.timedelta(minutes=45))
+        self.assertEqual(len(self.posts), 2)
+
+    def test_no_scan_option_only_logs(self):
+        self.grant()
+        self.discover([PHONE])
+        _, out = self.discover([PHONE, CAMERA], scan_new=False)
+        self.assertIn("NEW DEVICE", out)
+        self.assertEqual(self.posts, [])
+
+    def test_device_without_vendor_is_reported_as_unknown_maker(self):
+        self.grant()
+        self.discover([PHONE])
+        _, out = self.discover([PHONE, {"ip": "172.20.10.12", "mac": "02:1a:7d:96:b9:62", "vendor": ""}], scan_new=False)
+        self.assertIn("unknown maker", out)
+
+    def test_device_state_never_contains_a_mac(self):
+        self.grant()
+        self.discover([PHONE, LAPTOP])
+        self.discover([PHONE, LAPTOP, CAMERA], scan_new=False)
+        text = (autoscan.STATE_DIR / "devices.json").read_text().lower()
+        for device in (PHONE, LAPTOP, CAMERA):
+            self.assertNotIn(device["mac"], text)
+            self.assertNotIn(device["mac"].replace(":", ""), text)
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions")
+    def test_device_state_is_private(self):
+        self.grant()
+        self.discover([PHONE])
+        self.assertEqual((autoscan.STATE_DIR / "devices.json").stat().st_mode & 0o777, 0o600)
+
+    def test_inventory_is_per_network(self):
+        """A device known at home is still new on the team hotspot (another router = another inventory)."""
+        self.grant()
+        self.grant(mac="de:ad:be:ef:00:01")
+        self.discover([PHONE])
+        self.discover([PHONE, LAPTOP], mac="de:ad:be:ef:00:01")
+        _, out = self.discover([PHONE, LAPTOP], mac="de:ad:be:ef:00:01", scan_new=False)
+        self.assertIn("No change", out)
+        _, out = self.discover([PHONE, LAPTOP], scan_new=False)
+        self.assertIn("NEW DEVICE on the network: Intel Corporate", out)
+
+    def test_busy_agent_is_a_skip(self):
+        self.grant()
+        code, out = self.discover([PHONE], discover_status=409)
+        self.assertEqual(code, autoscan.EXIT_SKIPPED)
+        self.assertIn("already running", out)
+
+    def test_forgotten_device_is_reported_again(self):
+        known = {}
+        now = dt.datetime(2026, 11, 8, tzinfo=dt.timezone.utc)
+        seen = {"fp1": {"ip": "172.20.10.2", "vendor": "Apple"}}
+        self.assertEqual(autoscan.remember(known, seen, now), ["fp1"])
+        self.assertEqual(autoscan.remember(known, seen, now + dt.timedelta(days=1)), [])
+        self.assertEqual(autoscan.remember(known, {}, now + dt.timedelta(days=40)), [])
+        self.assertEqual(known, {})
+        self.assertEqual(autoscan.remember(known, seen, now + dt.timedelta(days=41)), ["fp1"])
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ Two ways to use it:
       python3 agent.py serve
       GET  /network                  -> detected network as JSON
       POST /scan  -> requires confirm=true and the network shown for consent
+      POST /discover -> same body; who is connected right now (nmap -sn, no ports)
 
 The only privileged step is `sudo -n /usr/local/sbin/netcheck-nmap <cidr>`,
 which sudoers allows without a password for members of the `netcheck` group.
@@ -24,12 +25,14 @@ Configuration (environment variables, no secrets in code):
                         (the detected subnet is always the default allowlist)
 """
 import argparse
+import ipaddress
 import json
 import os
 import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from xml.etree import ElementTree
 
 from detect import DetectError, NetworkInfo, detect_network
 from guard import ScopeError, check_scope
@@ -38,6 +41,8 @@ WRAPPER = "/usr/local/sbin/netcheck-nmap"
 MAX_BODY_BYTES = 1024
 REFUSAL_DRAIN_TIMEOUT_SECONDS = 0.2
 SCAN_TIMEOUT_SECONDS = 660
+DISCOVER_TIMEOUT_SECONDS = 150
+DISCOVER_MAX_XML = 2 * 1024 * 1024
 _scan_lock = threading.Lock()
 
 
@@ -50,18 +55,22 @@ def allowlist_for(info: NetworkInfo) -> list:
     return [info.subnet] + [e.strip() for e in extra.split(",") if e.strip()]
 
 
+def _check_expected(info: NetworkInfo, expected_network: dict | None) -> None:
+    if expected_network is not None and expected_network != {
+        "interface": info.interface, "subnet": info.subnet,
+        "gateway": info.gateway or None, "ssid": info.ssid or None,
+    }:
+        raise ScopeError("The network no longer matches your confirmation. Check it and confirm again.",
+                         "Rețeaua nu mai corespunde confirmării tale. Verific-o și confirmă din nou.")
+
+
 def run_scan(confirm: bool, target: str = "", *, expected_network: dict | None = None) -> dict:
     if not _scan_lock.acquire(blocking=False):
         raise ScanError("A scan is already running.")
     try:
         info = detect_network()
         net = check_scope(target or info.subnet, allowlist_for(info), confirm)
-        if expected_network is not None and expected_network != {
-            "interface": info.interface, "subnet": info.subnet,
-            "gateway": info.gateway or None, "ssid": info.ssid or None,
-        }:
-            raise ScopeError("The network no longer matches your confirmation. Check it and confirm again.",
-                             "Rețeaua nu mai corespunde confirmării tale. Verific-o și confirmă din nou.")
+        _check_expected(info, expected_network)
         result = subprocess.run(["sudo", "-n", WRAPPER, str(net)],
                                 capture_output=True, text=True, timeout=SCAN_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -74,6 +83,68 @@ def run_scan(confirm: bool, target: str = "", *, expected_network: dict | None =
     if not lines:
         raise ScanError("The scan finished but did not report where the results were saved.")
     return {"network": info.to_dict(), "target": str(net), "xml_path": lines[-1]}
+
+
+def parse_discovery(xml_text: str, own_ip: str = "") -> list:
+    """Hosts that are up, from `nmap -sn -oX -` output: [{"ip", "mac", "vendor"}], sorted by IP.
+
+    The XML comes from our own root wrapper, but it is still bounded and parsed defensively.
+    The laptop/Pi running the scan reports no MAC for itself and is left out.
+    """
+    if len(xml_text) > DISCOVER_MAX_XML:
+        raise ScanError("The discovery result is too large.")
+    # Stdlib only (no defusedxml here): nmap writes a bare <!DOCTYPE nmaprun> and never declares
+    # entities, so any entity declaration is refused before parsing (XXE / entity expansion).
+    if "<!ENTITY" in xml_text.upper():
+        raise ScanError("The discovery result contains unexpected XML entities.")
+    try:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError:
+        raise ScanError("The discovery result could not be read.")
+    devices: dict = {}
+    for host in root.findall("host"):
+        status = host.find("status")
+        if status is None or status.get("state") != "up":
+            continue
+        ip = mac = vendor = ""
+        for address in host.findall("address"):
+            kind = address.get("addrtype")
+            if kind == "ipv4" and not ip:
+                ip = address.get("addr", "")
+            elif kind == "mac" and not mac:
+                mac = address.get("addr", "").lower()
+                vendor = address.get("vendor", "")
+        try:
+            ipaddress.IPv4Address(ip)
+        except ValueError:
+            continue
+        if ip == own_ip:
+            continue
+        devices[ip] = {"ip": ip, "mac": mac, "vendor": vendor[:80]}
+    return [devices[ip] for ip in sorted(devices, key=lambda a: int(ipaddress.IPv4Address(a)))]
+
+
+def run_discovery(confirm: bool, *, expected_network: dict | None = None) -> dict:
+    """Who is connected right now (no ports). Same scope guard and lock as a full scan.
+
+    Full MAC addresses are returned only to the local client (127.0.0.1, request checks below),
+    which must not store them in clear (deploy/pi/ajar_autoscan.py keeps only a keyed hash).
+    """
+    if not _scan_lock.acquire(blocking=False):
+        raise ScanError("A scan is already running.")
+    try:
+        info = detect_network()
+        net = check_scope(info.subnet, allowlist_for(info), confirm)
+        _check_expected(info, expected_network)
+        result = subprocess.run(["sudo", "-n", WRAPPER, "--discover", str(net)],
+                                capture_output=True, text=True, timeout=DISCOVER_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise ScanError("The discovery took too long and was stopped.")
+    finally:
+        _scan_lock.release()
+    if result.returncode != 0:
+        raise ScanError(result.stderr.strip()[:500] or "The discovery failed.")
+    return {"network": info.to_dict(), "target": str(net), "devices": parse_discovery(result.stdout, info.address)}
 
 
 CONSENT_TEXT = {
@@ -97,6 +168,8 @@ def cli(argv: list) -> int:
     p_scan = sub.add_parser("scan")
     p_scan.add_argument("--target", default="", help="defaults to the detected subnet")
     p_scan.add_argument("--confirm", action="store_true", help="required for a live scan")
+    p_discover = sub.add_parser("discover", help="who is connected (no ports), detected subnet only")
+    p_discover.add_argument("--confirm", action="store_true", help="required for a live discovery")
     sub.add_parser("serve")
     args = parser.parse_args(argv)
 
@@ -105,6 +178,12 @@ def cli(argv: list) -> int:
             print(json.dumps(network_summary(), indent=2, ensure_ascii=False))
         elif args.cmd == "scan":
             print(json.dumps(run_scan(args.confirm, args.target), indent=2))
+        elif args.cmd == "discover":
+            found = run_discovery(args.confirm)
+            # The CLI shows masked MACs only; full addresses never reach the terminal or its scrollback.
+            for device in found["devices"]:
+                device["mac"] = (device["mac"][:8] + ":xx:xx:xx") if device["mac"] else ""
+            print(json.dumps(found, indent=2, ensure_ascii=False))
         else:
             serve()
     except ScopeError as e:
@@ -197,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self._trusted("POST"):
             return
-        if self.path != "/scan":
+        if self.path not in ("/scan", "/discover"):
             self._send(404, {"error": "not found"})
             return
         try:
@@ -223,7 +302,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(expected, dict):
                 raise ScopeError("Check the current network and confirm it before scanning.",
                                  "Verifică rețeaua curentă și confirm-o înainte de scanare.")
-            self._send(200, run_scan(confirm, expected_network=expected))
+            if self.path == "/discover":
+                self._send(200, run_discovery(confirm, expected_network=expected))
+            else:
+                self._send(200, run_scan(confirm, expected_network=expected))
         except ScopeError as e:
             self._send(403, {"error": "refused", "en": e.en, "ro": e.ro})
         except ScanError as e:

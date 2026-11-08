@@ -15,22 +15,27 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 UNITS=/etc/systemd/system
 
+UNIT_FILES=(ajar-autoscan.service ajar-autoscan.timer ajar-discover.service ajar-discover.timer)
+TIMERS=(ajar-autoscan.timer ajar-discover.timer)
+
 if [[ "${1:-}" == "--remove" ]]; then
-  sudo systemctl disable --now ajar-autoscan.timer 2>/dev/null || true
-  sudo rm -f "$UNITS/ajar-autoscan.timer" "$UNITS/ajar-autoscan.service"
+  sudo systemctl disable --now "${TIMERS[@]}" 2>/dev/null || true
+  for unit in "${UNIT_FILES[@]}"; do sudo rm -f "$UNITS/$unit"; done
   sudo systemctl daemon-reload
-  echo "Scanarea programată a fost oprită și ștearsă / Scheduled scan stopped and removed."
+  echo "Scanările programate au fost oprite și șterse / Scheduled scans stopped and removed."
   exit 0
 fi
 
-for unit in ajar-autoscan.service ajar-autoscan.timer; do
+for unit in "${UNIT_FILES[@]}"; do
   sed -e "s|@USER@|$USER|g" -e "s|@REPO@|$REPO|g" "$HERE/$unit" | sudo tee "$UNITS/$unit" > /dev/null
 done
 chmod 0755 "$HERE/ajar_autoscan.py"
 sudo systemctl daemon-reload
-sudo systemctl enable --now ajar-autoscan.timer
+sudo systemctl enable --now "${TIMERS[@]}"
 
 echo
 echo "Instalat pentru $USER, repo $REPO / Installed for $USER, repo $REPO."
+echo "Important: wrapper-ul root s-a schimbat (modul --discover). Rulează și:"
+echo "           the root wrapper changed (--discover mode). Also run:  sudo ./scanner/install.sh $USER"
 echo "Pasul următor / Next: python3 deploy/pi/ajar_autoscan.py consent grant"
-systemctl list-timers ajar-autoscan.timer --no-pager || true
+systemctl list-timers "${TIMERS[@]}" --no-pager || true

@@ -14,7 +14,14 @@ Usage (as the normal user, never as root):
     ajar_autoscan.py consent show
     ajar_autoscan.py consent revoke [--all]
     ajar_autoscan.py check                       # would a scan run now? (no scan)
-    ajar_autoscan.py run                         # used by the systemd timer
+    ajar_autoscan.py run                         # full scan, used by the 3-hour timer
+    ajar_autoscan.py discover [--no-scan]        # who is connected? used by the 10-minute timer
+
+Stage 2 (discover): host discovery only (nmap -sn through the agent and the root wrapper, no ports).
+Devices are remembered by HMAC(local key, MAC), never by the MAC itself. The first run on a network
+records a baseline; later runs log every device never seen before and start one full scan (at most
+every 30 minutes) to see its open ports. Phones that use a random Wi-Fi address keep it per network,
+so they are usually recognised; a phone that changes its random address appears as a new device.
 
 The scan itself goes through the app's existing API (http://127.0.0.1:8001), so it uses the same
 agent, scope guard and root wrapper as a manual scan, and lands in the history like any scan.
@@ -38,9 +45,13 @@ import urllib.request
 from pathlib import Path
 
 API = os.environ.get("AJAR_API", "http://127.0.0.1:8001")
+AGENT = os.environ.get("AJAR_AGENT", "http://127.0.0.1:8765")
 STATE_DIR = Path(os.environ.get("AJAR_STATE_DIR", Path.home() / ".config" / "ajar"))
 DEFAULT_DAYS = 30
 SCAN_TIMEOUT_S = 900          # a full scan takes minutes; the agent itself stops at ~11 min
+DISCOVER_TIMEOUT_S = 180
+FULL_SCAN_COOLDOWN = dt.timedelta(minutes=30)   # a new device triggers at most one full scan per 30 min
+FORGET_AFTER = dt.timedelta(days=30)            # devices not seen for 30 days are forgotten
 EXIT_OK, EXIT_SKIPPED, EXIT_ERROR = 0, 0, 1   # a refused/skipped run is not a failure of the timer
 
 
@@ -172,9 +183,10 @@ def find_consent(consents: list[dict], current: dict, now: dt.datetime) -> tuple
 
 # ------------------------------------------------------------------ app API (loopback only)
 
-def api(method: str, path: str, body: dict | None = None, timeout: float = 10) -> tuple[int, dict]:
+def api(method: str, path: str, body: dict | None = None, timeout: float = 10, base: str = "") -> tuple[int, dict]:
+    base = base or API
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    request = urllib.request.Request(API + path, data=data, method=method)
+    request = urllib.request.Request(base + path, data=data, method=method)
     if data is not None:
         request.add_header("Content-Type", "application/json")
     try:
@@ -187,7 +199,7 @@ def api(method: str, path: str, body: dict | None = None, timeout: float = 10) -
             payload = {}
         return err.code, payload
     except (urllib.error.URLError, TimeoutError, OSError) as err:
-        raise AutoscanError(f"app API unreachable at {API}: {err}") from None
+        raise AutoscanError(f"unreachable at {base}: {err}") from None
 
 
 def current_network() -> dict:
@@ -298,8 +310,49 @@ def cmd_run() -> int:
             f"Scan skipped: no consent for this network ({reason}).")
         return EXIT_SKIPPED
     say(f"Pornesc scanarea programată. {describe(network)}", "Starting the scheduled scan.")
+    return full_scan(network, consent)
+
+
+# ------------------------------------------------------------------ stage 2: new devices (every 10 min)
+
+def _devices_path() -> Path:
+    return STATE_DIR / "devices.json"
+
+
+def load_devices() -> dict:
+    try:
+        data = json.loads(_devices_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_devices(state: dict) -> None:
+    _private_write(_devices_path(), (json.dumps(state, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
+def remember(known: dict, seen: dict, now: dt.datetime) -> list:
+    """Pure. Update `known` (fingerprint -> record) with `seen`; return the fingerprints that are new.
+    Records not seen for FORGET_AFTER are dropped, so an old device coming back is reported again."""
+    stamp = now.isoformat(timespec="seconds")
+    for fp in [fp for fp, rec in known.items()
+               if now - dt.datetime.fromisoformat(rec.get("last_seen", stamp)) > FORGET_AFTER]:
+        del known[fp]
+    new = [fp for fp in seen if fp not in known]
+    for fp, device in seen.items():
+        record = known.setdefault(fp, {"first_seen": stamp})
+        record.update({"last_seen": stamp, "ip": device["ip"], "vendor": device["vendor"]})
+    return sorted(new, key=lambda fp: seen[fp]["ip"])
+
+
+def full_scan(network: dict, consent: dict) -> int:
+    """Full scan through the app API (same path as the UI button). Records when it ran."""
     # Echo the network exactly as the API showed it: the agent re-checks it before scanning.
     status, scan = api("POST", "/api/scans", {"confirm": True, "expected_network": network}, timeout=SCAN_TIMEOUT_S)
+    if status == 200:
+        state = load_devices()
+        state.setdefault(consent["gateway_fp"], {})["last_full_scan"] = now_utc().isoformat(timespec="seconds")
+        save_devices(state)
     if status == 409:
         say("Scanare sărită: altă scanare rulează deja.", "Scan skipped: another scan is already running.")
         return EXIT_SKIPPED
@@ -311,6 +364,71 @@ def cmd_run() -> int:
     score = scan.get("score")
     findings = len(scan.get("findings") or [])
     say(f"Scanare terminată: scor {score}, {findings} probleme.", f"Scan finished: score {score}, {findings} findings.")
+    return EXIT_OK
+
+
+def agent_expected_network() -> dict:
+    """The agent's own view of the network, in the exact shape it re-checks before discovery."""
+    status, raw = api("GET", "/network", base=AGENT)
+    if status != 200 or not raw.get("subnet"):
+        raise AutoscanError(f"cannot read the network from the scanner agent (HTTP {status})")
+    return {"interface": raw.get("interface"), "subnet": raw.get("subnet"),
+            "gateway": raw.get("gateway") or None, "ssid": raw.get("ssid") or None}
+
+
+def cmd_discover(scan_new: bool = True) -> int:
+    """Every 10 minutes: who is connected? Log devices never seen on this network before.
+    The first run on a network only records what is there (baseline, no alert)."""
+    consent, network, reason = decide()
+    if not consent:
+        say(f"Verificare sărită: rețeaua nu are acord ({reason}).",
+            f"Check skipped: no consent for this network ({reason}).")
+        return EXIT_SKIPPED
+    status, found = api("POST", "/discover", {"confirm": True, "expected_network": agent_expected_network()},
+                        timeout=DISCOVER_TIMEOUT_S, base=AGENT)
+    if status == 409:
+        say("Verificare sărită: o scanare rulează deja.", "Check skipped: a scan is already running.")
+        return EXIT_SKIPPED
+    if status == 403:
+        say("Verificare refuzată: rețeaua s-a schimbat între timp.", "Check refused: the network changed meanwhile.")
+        return EXIT_SKIPPED
+    if status != 200 or not isinstance(found.get("devices"), list):
+        raise AutoscanError(f"discovery failed (HTTP {status})")
+
+    key = load_key()
+    seen: dict = {}
+    for device in found["devices"]:
+        if isinstance(device, dict) and device.get("mac"):
+            # Only a keyed hash of the MAC is kept; the address itself is dropped here.
+            seen[fingerprint(key, str(device["mac"]))] = {"ip": str(device.get("ip", "")),
+                                                            "vendor": str(device.get("vendor", ""))[:80]}
+    state = load_devices()
+    net_state = state.setdefault(consent["gateway_fp"], {})
+    baseline = "devices" not in net_state
+    now = now_utc()
+    new = remember(net_state.setdefault("devices", {}), seen, now)
+    save_devices(state)
+
+    if baseline:
+        say(f"Inventar inițial: {len(seen)} dispozitive conectate.", f"Initial inventory: {len(seen)} devices connected.")
+        return EXIT_OK
+    if not new:
+        say(f"Nicio schimbare: {len(seen)} dispozitive conectate, niciunul nou.",
+            f"No change: {len(seen)} devices connected, none new.")
+        return EXIT_OK
+    for fp in new:
+        device = seen[fp]
+        vendor = device["vendor"] or "producător necunoscut / unknown maker"
+        say(f"DISPOZITIV NOU în rețea: {vendor}, IP {device['ip']}.", f"NEW DEVICE on the network: {vendor}, IP {device['ip']}.")
+
+    last = net_state.get("last_full_scan")
+    recent = last and now - dt.datetime.fromisoformat(last) < FULL_SCAN_COOLDOWN
+    if scan_new and not recent:
+        say("Pornesc o scanare completă ca să văd ce porturi are.", "Starting a full scan to see its open ports.")
+        return full_scan(network, consent)
+    if scan_new:
+        say("Scanarea completă a rulat recent; următoarea o va include.",
+            "A full scan ran recently; the next one will include it.")
     return EXIT_OK
 
 
@@ -328,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
     revoke.add_argument("--all", action="store_true")
     sub.add_parser("check")
     sub.add_parser("run")
+    discover = sub.add_parser("discover")
+    discover.add_argument("--no-scan", action="store_true", help="only log new devices, no follow-up full scan")
     args = parser.parse_args(argv)
     try:
         if args.command == "consent":
@@ -338,6 +458,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_revoke(args.all)
         if args.command == "check":
             return cmd_check()
+        if args.command == "discover":
+            return cmd_discover(scan_new=not args.no_scan)
         return cmd_run()
     except AutoscanError as err:
         say(f"Eroare: {err}", f"Error: {err}", sys.stderr)

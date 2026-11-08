@@ -8,13 +8,16 @@ import anything from the user-writable repository, otherwise a normal user
 could change that code and get it executed as root.
 
 Usage:  sudo -n /usr/local/sbin/netcheck-nmap <cidr>
+        sudo -n /usr/local/sbin/netcheck-nmap --discover <cidr>
         e.g. sudo -n /usr/local/sbin/netcheck-nmap 172.20.10.0/28
 
 It re-checks the target independently of the agent (defense in depth):
   * must be a private IPv4 network, /24 or smaller
   * must lie inside the subnet of the only connected physical interface
-Then it runs a FIXED nmap command (no user-supplied options) and writes the XML
-to a fixed directory. The last line printed on stdout is the XML path.
+Then it runs one of two FIXED nmap commands (no user-supplied options):
+  * full scan: writes the XML to a fixed directory; the last line on stdout is its path.
+  * --discover: host discovery only (nmap -sn -n, no ports, no DNS) at <= 100 packets/s;
+    the XML goes to stdout and nothing is written to disk.
 """
 import datetime
 import ipaddress
@@ -32,6 +35,8 @@ UDP_PORTS = "53,123,161,1900,5353"
 EXTRA_PORTS_FILE = "/etc/netcheck/extra_tcp_ports"
 MIN_PREFIX = 24
 TIMEOUT_SECONDS = 600
+DISCOVER_TIMEOUT_SECONDS = 120
+MAX_DISCOVER_OUTPUT = 2 * 1024 * 1024
 
 
 def fail(message: str, code: int = 2) -> None:
@@ -119,14 +124,19 @@ def top_tcp_ports(limit: int = 1000) -> str:
     return ",".join(str(port) for _, port in rows[:limit])
 
 
-def main() -> None:
-    if os.geteuid() != 0:
-        fail("must be run through sudo", 4)
-    if len(sys.argv) != 2:
-        fail("usage: netcheck-nmap <cidr>")
+def parse_args(argv: list) -> tuple:
+    """Exactly two forms, nothing else: [<cidr>] (full scan) or ['--discover', <cidr>] (who is up)."""
+    if len(argv) == 1 and not argv[0].startswith("-"):
+        return "scan", argv[0]
+    if len(argv) == 2 and argv[0] == "--discover":
+        return "discover", argv[1]
+    fail("usage: netcheck-nmap <cidr> | netcheck-nmap --discover <cidr>")
+    return "", ""
 
+
+def checked_target(raw: str) -> ipaddress.IPv4Network:
     try:
-        target = ipaddress.ip_network(sys.argv[1], strict=True)
+        target = ipaddress.ip_network(raw, strict=True)
     except ValueError:
         fail("target is not a valid network address (e.g. 172.20.10.0/28)")
     if target.version != 4:
@@ -139,6 +149,34 @@ def main() -> None:
     local = current_subnet()
     if not target.subnet_of(local):
         fail(f"target {target} is not inside the network this laptop is connected to ({local})")
+    return target
+
+
+def discover_command(nmap_bin: str, target: ipaddress.IPv4Network) -> list:
+    """Host discovery only (ARP on the local subnet): no port scan, no DNS, no file written."""
+    return [nmap_bin, "-sn", "-n", "--max-rate", "100", "-oX", "-", str(target)]
+
+
+def discover(target: ipaddress.IPv4Network) -> None:
+    nmap_bin: str = first_existing(NMAP_BINARIES)
+    try:
+        result = subprocess.run(discover_command(nmap_bin, target), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, timeout=DISCOVER_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        fail("discovery took too long and was stopped", 5)
+    if result.returncode != 0:
+        fail(f"nmap failed: {result.stderr.strip()[:300]}", 6)
+    sys.stdout.write(result.stdout[:MAX_DISCOVER_OUTPUT])
+
+
+def main() -> None:
+    if os.geteuid() != 0:
+        fail("must be run through sudo", 4)
+    mode, raw = parse_args(sys.argv[1:])
+    target = checked_target(raw)
+    if mode == "discover":
+        discover(target)
+        return
 
     nmap_bin: str = first_existing(NMAP_BINARIES)
     os.makedirs(OUT_DIR, mode=0o755, exist_ok=True)
