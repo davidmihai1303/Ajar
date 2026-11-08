@@ -1,6 +1,7 @@
 // While the live scan runs, Ajar walks to the centre (AjarDock "center" placement) and waits here.
 import { useEffect, useState } from "react";
 import { useApp } from "../state/AppState";
+import ScanWord from "../components/ScanWord";
 
 export default function ScanProgress() {
   const { t, network } = useApp();
@@ -15,7 +16,9 @@ export default function ScanProgress() {
   return (
     <div className="progress-screen">
       <div className="progress-center">
-        <h1 className="serif progress-title">{t("scan.running.title")}</h1>
+        <h1 className="serif progress-title">
+          <ScanWord />
+        </h1>
         <div className="progress-track" role="progressbar" aria-label={t("scan.running.title")} aria-valuetext={t("scan.running.elapsed", { time: `${minutes}:${rest}` })}>
           <div className="progress-indeterminate" />
         </div>

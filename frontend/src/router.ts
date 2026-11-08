@@ -1,4 +1,4 @@
-// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask, #/report, #/widget, #/inbox, #/toast (desktop app popup).
+// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask, #/report, #/widget, #/inbox.
 import { useEffect, useState } from "react";
 
 export type Route =
@@ -11,7 +11,6 @@ export type Route =
   | { name: "ask"; query?: string; draft?: string }
   | { name: "report" }
   | { name: "widget" }
-  | { name: "toast" }
   | { name: "inbox" };
 
 export function parseRoute(hash: string): Route {
@@ -33,8 +32,6 @@ export function parseRoute(hash: string): Route {
       return { name: "report" };
     case "widget":
       return { name: "widget" };
-    case "toast":
-      return { name: "toast" };
     case "inbox":
       return { name: "inbox" };
     default:

@@ -3,14 +3,13 @@
 // It is a shell around the Ajar web app that already runs on this computer (Docker, 127.0.0.1:8001):
 // - the main window shows that app; closing it keeps Ajar running in the tray;
 // - a tray icon opens the window, shows a test notification, toggles "start at login" and quits;
-// - notifications appear as a small always-on-top window in the corner of the screen with Ajar
-//   (animated) on the right and the text on the left, even while the main window is hidden;
+// - notifications are normal system notifications, with Ajar's picture as their icon;
 // - on first start it adds itself to "start at login", so it is in the tray after every login.
 // It never runs scans or nmap itself, and it only loads pages from the local Ajar app.
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, net, session, shell } = require("electron");
 
 const APP_URL = new URL(process.env.AJAR_URL || "http://127.0.0.1:8001/");
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost"]);
@@ -19,8 +18,6 @@ if (!LOCAL_HOSTS.has(APP_URL.hostname) || !["http:", "https:"].includes(APP_URL.
 }
 const ORIGIN = APP_URL.origin;
 const START_HIDDEN = process.argv.includes("--hidden");
-const TOAST = { width: 460, margin: 16, minHeight: 120, maxHeight: 320, showMs: 15000 };
-const LEVELS = new Set(["high", "medium", "low", "info", "clear", "unknown"]);
 
 const TEXT = {
   ro: {
@@ -29,7 +26,7 @@ const TEXT = {
     login: "Pornește odată cu calculatorul",
     quit: "Ieșire",
     testTitle: "Ajar: notificare de test",
-    testBody: "Așa te anunț când o scanare găsește ceva nou. Apasă „Deschide” ca să vezi detaliile.",
+    testBody: "Așa te anunț când o scanare găsește ceva nou. Apasă pe notificare ca să vezi detaliile.",
     trayTitle: "Ajar rămâne în bara de sistem",
     trayBody: "Am închis fereastra, dar te anunț în continuare. Mă găsești la iconița Ajar.",
   },
@@ -39,17 +36,14 @@ const TEXT = {
     login: "Start when the computer starts",
     quit: "Quit",
     testTitle: "Ajar: test notification",
-    testBody: "This is how I tell you when a scan finds something new. Press “Open” to see the details.",
+    testBody: "This is how I tell you when a scan finds something new. Click the notification to see the details.",
     trayTitle: "Ajar stays in the tray",
     trayBody: "I closed the window, but I keep watching. You can find me at the Ajar icon.",
   },
 };
 
 let mainWindow = null;
-let toastWindow = null;
-let toastReady = false;
-let pendingToast = null;
-let toastTimer = null;
+const shownNotifications = new Set(); // kept referenced so a click still reaches us
 let tray = null;
 let quitting = false;
 let lang = "ro";
@@ -153,7 +147,8 @@ function createMainWindow() {
     icon: asset("icon.png"),
     backgroundColor: "#faf8f5",
     autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    // backgroundThrottling off: the window usually sits hidden in the tray and still watches for scans.
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
   });
   lockDown(mainWindow);
   mainWindow.webContents.on("did-fail-load", (_event, _code, _description, url, isMainFrame) => {
@@ -168,7 +163,7 @@ function createMainWindow() {
     mainWindow.hide();
     if (!readSettings().trayHintShown) {
       writeSettings({ trayHintShown: true });
-      showToast({ id: `tray-${Date.now()}`, title: text().trayTitle, body: text().trayBody, level: "clear" });
+      showNotification({ title: text().trayTitle, body: text().trayBody });
     }
   });
   void loadApp();
@@ -181,64 +176,19 @@ function showMain() {
   mainWindow.focus();
 }
 
-// ---- notification window: Ajar on the right, the text on the left
+// ---- notifications: normal system notifications; Ajar's picture is the icon
 
-function placeToast(height) {
-  const area = screen.getPrimaryDisplay().workArea;
-  const h = Math.max(TOAST.minHeight, Math.min(TOAST.maxHeight, Math.round(height)));
-  toastWindow.setBounds({
-    x: area.x + area.width - TOAST.width - TOAST.margin,
-    y: area.y + area.height - h - TOAST.margin,
-    width: TOAST.width,
-    height: h,
+function showNotification({ title, body }) {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({ title, body, icon: nativeImage.createFromPath(asset("icon.png")) });
+  const forget = () => shownNotifications.delete(notification);
+  shownNotifications.add(notification);
+  notification.on("click", () => {
+    forget();
+    showMain();
   });
-}
-
-function createToastWindow() {
-  toastReady = false;
-  toastWindow = new BrowserWindow({
-    width: TOAST.width,
-    height: 190,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    focusable: false,
-    hasShadow: false,
-    title: "Ajar",
-    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
-  });
-  toastWindow.setAlwaysOnTop(true, "screen-saver");
-  toastWindow.setVisibleOnAllWorkspaces(true);
-  lockDown(toastWindow);
-  toastWindow.on("closed", () => {
-    toastWindow = null;
-    toastReady = false;
-  });
-  void toastWindow.loadURL(new URL("/#/toast", ORIGIN).toString()).catch(() => undefined);
-}
-
-function hideToast() {
-  clearTimeout(toastTimer);
-  toastWindow?.hide();
-}
-
-function showToast(notice) {
-  pendingToast = notice;
-  if (!toastWindow) createToastWindow();
-  if (!toastReady) return; // sent as soon as the popup page says it is ready
-  pendingToast = null;
-  placeToast(190);
-  toastWindow.webContents.send("ajar:toast", notice);
-  toastWindow.showInactive();
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, TOAST.showMs);
+  notification.on("close", forget);
+  notification.show();
 }
 
 // Notices come from the Ajar page; accept only plain, short text from our own pages.
@@ -246,10 +196,8 @@ function cleanNotice(raw) {
   if (!raw || typeof raw !== "object") return null;
   const clip = (value, max) => (typeof value === "string" ? value.slice(0, max) : "");
   const notice = {
-    id: clip(raw.id, 64) || String(Date.now()),
     title: clip(raw.title, 160),
     body: clip(raw.body, 600),
-    level: LEVELS.has(raw.level) ? raw.level : "unknown",
   };
   return notice.title || notice.body ? notice : null;
 }
@@ -259,20 +207,7 @@ const fromOurPage = (event) => isLocalUrl(event.senderFrame?.url ?? "");
 ipcMain.on("ajar:notify", (event, raw) => {
   if (!fromOurPage(event)) return;
   const notice = cleanNotice(raw);
-  if (notice) showToast(notice);
-});
-ipcMain.on("ajar:toast-ready", (event) => {
-  if (!toastWindow || event.sender !== toastWindow.webContents) return;
-  toastReady = true;
-  if (pendingToast) showToast(pendingToast);
-});
-ipcMain.on("ajar:toast-closed", (event) => {
-  if (toastWindow && event.sender === toastWindow.webContents) hideToast();
-});
-ipcMain.on("ajar:open-main", (event) => {
-  if (!fromOurPage(event)) return;
-  hideToast();
-  showMain();
+  if (notice) showNotification(notice);
 });
 ipcMain.on("ajar:lang", (event, value) => {
   if (!fromOurPage(event) || (value !== "ro" && value !== "en") || value === lang) return;
@@ -295,7 +230,7 @@ function buildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: t.open, click: showMain },
-      { label: t.test, click: () => showToast({ id: `test-${Date.now()}`, title: t.testTitle, body: t.testBody, level: "high" }) },
+      { label: t.test, click: () => showNotification({ title: t.testTitle, body: t.testBody }) },
       { type: "separator" },
       { label: t.login, type: "checkbox", checked: autostartEnabled(), click: (item) => setAutostart(item.checked) },
       { type: "separator" },

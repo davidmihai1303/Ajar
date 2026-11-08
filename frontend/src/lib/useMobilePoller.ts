@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { api } from "../api/client";
-import { assessment } from "./scan";
 import { useApp } from "../state/AppState";
 
 /**
@@ -8,8 +7,11 @@ import { useApp } from "../state/AppState";
  * Triggers mobile notifications, haptic vibration and audio alerts when threats are found.
  */
 export function useMobilePoller(enabled = true, intervalMs = 8000) {
-  const { scan, selectScan, refreshHistory, t, notificationsEnabled, notify } = useApp();
+  const { scan, scanning, selectScan, refreshHistory, t, notificationsEnabled, notify } = useApp();
   const lastScanIdRef = useRef<string | null>(scan?.id ?? null);
+  // A scan started here notifies by itself when it ends; the poll must not announce it as well.
+  const scanningRef = useRef(scanning);
+  scanningRef.current = scanning;
 
   useEffect(() => {
     if (scan?.id) {
@@ -23,6 +25,7 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
     let timer: number | undefined;
 
     const checkServer = async () => {
+      if (scanningRef.current) return;
       try {
         const history = await api.history();
         if (!history || history.length === 0) return;
@@ -42,7 +45,6 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
           notify({
             title: t("desktop.scanCompleted", { score: latest.score ?? "—" }),
             body: full ? t("desktop.scanCompletedBody", { high, medium }) : t("mobile.notifySubtitle"),
-            level: full ? assessment(full) : "unknown",
           });
 
           // Trigger mobile vibration
