@@ -100,6 +100,17 @@ def test_cold_timeout_and_retry(tmp_path):
     assert ask(model, "Which ports?", EVIDENCE).grounded
 
 
+def test_turn_off_waits_for_router_to_release_worker(tmp_path):
+    states = iter(["loaded", "unloaded"])
+    def acknowledge(req):
+        if req.url.path == "/models/unload":
+            return httpx.Response(200, json={"success": True})
+        return httpx.Response(200, json={"data": [{"id": "local", "status": {"value": next(states)}}]})
+    model = ManagedQwen(str(tmp_path), 60, transport=httpx.MockTransport(acknowledge))
+    assert model.unload()
+    assert list(states) == []
+
+
 def test_unreachable_private_socket_never_posts_to_tcp(tmp_path, monkeypatch):
     import socket
     monkeypatch.setattr(socket.socket, "connect_ex", lambda *args: 0)

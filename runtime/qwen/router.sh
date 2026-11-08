@@ -15,6 +15,7 @@ awk -W interactive -v failure="$runtime/failure" '
     line ~ /offloaded [0-9]+\/[0-9]+ layers|release:.*truncated =|model loaded|entering sleep/ { print; fflush() }
     line ~ /out of memory|cudamalloc.*failed|cuda_error_out_of_memory/ { print "memory" > failure; close(failure) }
     line ~ /no cuda-capable device|invalid device: cuda0|cuda driver version is insufficient/ { print "gpu" > failure; close(failure) }
+    line ~ /failed to open.*\.gguf|unable to open.*\.gguf/ { print "weights" > failure; close(failure) }
 ' < "$fifo" &
 rm -f "$runtime/router.sock"
 echo starting > "$runtime/failure"

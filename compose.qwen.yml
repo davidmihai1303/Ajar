@@ -12,6 +12,7 @@ services:
     platform: linux/amd64
     user: "${AJAR_UID:-1000}:${AJAR_GID:-1000}"
     init: true
+    restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

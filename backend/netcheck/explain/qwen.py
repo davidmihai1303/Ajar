@@ -16,6 +16,8 @@ class ManagedQwen(LLMClient):
         self.socket = self.directory / "router.sock"
         self.transport = transport  # Optional in-process transport for fixture tests.
         self.lifecycle = threading.Lock()
+        self.stop_lock = threading.Lock()
+        self.stopping = False
         self.generation = 0
         self.waking = False
         self.last_failure: str | None = None
@@ -90,12 +92,14 @@ class ManagedQwen(LLMClient):
     def prepare_inference(self) -> bool:
         deadline = time.monotonic() + 120
         with self._lock:
+            if self.stopping:
+                return False
             generation = self.generation
         if not self.lifecycle.acquire(timeout=120):
             return False
         try:
             with self._lock:
-                if generation != self.generation:
+                if generation != self.generation or self.stopping:
                     return False
                 self.last_failure = None
             state, reason = self._router_state()
@@ -140,10 +144,16 @@ class ManagedQwen(LLMClient):
         try:
             with self._client(12) as client:
                 response = client.post("http://127.0.0.1:8080/models/unload", json={"model": self.model})
-                if response.is_success:
+                if not response.is_success:
+                    if response.status_code != 400 or "not running" not in response.json()["error"]["message"]:
+                        return False
+            # The router acknowledges unload before its worker has exited.
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                state, _ = self._router_state()
+                if state in {"idle", "failed"}:
                     return True
-                if response.status_code == 400:
-                    return "not running" in response.json()["error"]["message"]
+                time.sleep(0.1)
         except httpx.ConnectError:
             return True  # No managed worker is listening.
         except (httpx.HTTPError, KeyError, ValueError, TypeError):
@@ -151,8 +161,14 @@ class ManagedQwen(LLMClient):
         return False
 
     def unload(self) -> bool:
-        with self._lock:
-            self.generation += 1
-            self.last_failure = None
-            self._cache.clear()
-        return self._unload_worker()
+        with self.stop_lock:
+            with self._lock:
+                self.stopping = True
+                self.generation += 1
+                self.last_failure = None
+                self._cache.clear()
+            try:
+                return self._unload_worker()
+            finally:
+                with self._lock:
+                    self.stopping = False
