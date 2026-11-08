@@ -42,7 +42,7 @@ export default function Dashboard() {
         setMobileNotifActive(true);
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
         new Notification("Ajar", {
-          body: t("mobile.notifyActive"),
+          body: t("mobile.notifyActiveBody"),
           icon: "/favicon.ico",
         });
       }

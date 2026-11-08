@@ -14,7 +14,7 @@ export default function MobileHeader() {
       <div className="row" style={{ gap: 8 }}>
         <IconShield />
         <div className="stack" style={{ gap: 0 }}>
-          <span className="strong" style={{ fontSize: 16 }}>NetCheck</span>
+          <span className="strong" style={{ fontSize: 16 }}>Ajar</span>
           <span className="muted" style={{ fontSize: 12 }}>
             {scan?.ssid ?? t("network.unknownName")}
           </span>
