@@ -259,6 +259,9 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .demo-banner { position: fixed; right: 16px; bottom: 16px; z-index: 30; max-width: 440px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field select { font: 16px var(--sans); min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); min-width: 220px; }
+.field input { font: 16px var(--sans); min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); }
+.profile-form .field select, .profile-form .field input { width: 100%; }
+.profile-line { margin: 0; }
 .arrow { padding-bottom: 10px; }
 .field-error { color: var(--danger); }
 

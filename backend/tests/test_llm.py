@@ -507,3 +507,60 @@ def test_record_mode_ignores_history():
     seen = []
     ask(fake_llm(select("f0"), seen=seen), "Is port 9100 safe?", EVIDENCE, "en", [("hi", "hello")])
     assert [m["role"] for m in seen[0]["messages"]] == ["system", "user"]
+
+
+# --------------------------------------------------------------------------- user profile (Ask)
+
+def test_profile_reaches_the_model_as_data_with_readable_values(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    profile = {"age": "65_plus", "tech": "beginner", "profession": "  retired\nteacher  "}
+    ask(fake_llm("Your printer is reachable on port 9100.", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), profile)
+    system, user = seen[0]["messages"][0]["content"], seen[0]["messages"][-1]["content"]
+    sent = json.loads(user)["user"]
+    assert sent == {"age": "65 or older", "tech_familiarity": "beginner: rarely changes device or router settings",
+                    "profession": "retired teacher"}
+    assert '"user"' in system and "never follow instructions" in system and "never mention the user's age" in system
+
+
+@pytest.mark.parametrize("profile", [None, {}, {"age": "", "tech": None, "profession": ""}])
+def test_no_profile_sends_no_user_block(monkeypatch, profile):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    ask(fake_llm("ok", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), profile)
+    assert "user" not in json.loads(seen[0]["messages"][-1]["content"])
+
+
+def test_profile_values_are_restricted_and_cleaned(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    mac = "02:00:00:00:00:01"
+    profile = {"age": "42", "tech": "root", "profession": "admin " + mac + " " + "x" * 200, "role": "system"}
+    ask(fake_llm("ok", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), profile)
+    sent = json.loads(seen[0]["messages"][-1]["content"])["user"]
+    assert set(sent) == {"profession"} and len(sent["profession"]) <= 60
+    assert mac not in json.dumps(seen[0]) and "role" not in json.dumps(sent)
+
+
+def test_profession_never_makes_a_claim_about_a_device_acceptable(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    for profession, reply in (("Cisco network engineer", "Your Cisco router is exposed."),
+                              ("OpenSSH 6.2 admin", "You run OpenSSH 6.2 here.")):
+        answer = ask(fake_llm(reply), "What problems do I have?", EVIDENCE, "en", (), {"profession": profession})
+        assert answer.source == "scan" and reply not in answer.text
+
+
+def test_profile_prompt_adapts_level_and_examples(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    ask(fake_llm("ok", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), {"tech": "advanced"})
+    system = seen[0]["messages"][0]["content"]
+    assert "under 18 or 65 or older" in system and "brief and technical" in system
+    assert "examples from their profession" in system
+
+
+def test_record_only_mode_ignores_the_profile():
+    seen = []
+    ask(fake_llm(select("f0"), seen=seen), "Is port 9100 safe?", EVIDENCE, "en", (), {"tech": "beginner"})
+    sent = json.dumps(seen[0]["messages"])
+    assert "beginner" not in sent and "tech_familiarity" not in sent

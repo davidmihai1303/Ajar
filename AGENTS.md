@@ -114,7 +114,14 @@ gitleaks detect --source . --no-banner           # must be clean
   it survives moving between pages and an answer in progress still arrives; it belongs to one scan and
   resets when another scan is opened, on **New conversation**, or on reload. A used `#/ask?q=` /
   `?draft=` link is replaced by `#/ask`, so Back never sends or fills it twice.
-- Everything sent to the model (scan facts, question, prompt, history) must fit the bundled model's
+- "About you" (Ask page, `frontend/src/lib/profile.ts`, `ProfileDialog.tsx`): optional age range, tech
+  familiarity and profession (max 60 characters), kept in the browser (`localStorage`, `ajar.profile`)
+  and sent as `AskRequest.profile` (`UserProfile`). Only free answers use it, as data in the request
+  (`"user"`), never as instructions; the profession is cleaned. The model must not mention the age or
+  guess anything else about the user. Examples from the profession and brief, technical wording for advanced
+  users are accepted on purpose (team decision), although they are not scan evidence. The profession never
+  counts as evidence in the grounding check. "Delete my history" also removes the profile. Record-only mode ignores it.
+- Everything sent to the model (scan facts, question, prompt, history, profile) must fit the bundled model's
   4,096-token context together with the answer (`max_tokens` 600). Re-check the budgets when adding input.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
   The scan runs inside the user's network: do not prompt the model in a way that implies internet
@@ -167,7 +174,7 @@ gitleaks detect --source . --no-banner           # must be clean
    - **Known limitations / follow-ups:** anything left undone or deliberately skipped
 5. Contract files need agreement of the analysis and API owners before changing:
    `analysis/models.py`, `api/schemas.py`, `frontend/src/api/types.ts`, `frontend/src/api/mock.json`.
-   Keep `api/schemas.py` and `types.ts` in step (e.g. `ChatTurn` / `AskRequest.history`).
+   Keep `api/schemas.py` and `types.ts` in step (e.g. `ChatTurn` / `AskRequest.history`, `UserProfile`).
 6. Never force-push, rewrite shared history or commit secrets, `data/` or `input/`.
 7. After the Test Set upload (hour 20–21): **no code changes**. The live re-run must match the upload.
 

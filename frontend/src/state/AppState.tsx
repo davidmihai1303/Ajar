@@ -5,6 +5,7 @@ import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } 
 import { makeT, type TFunction } from "../i18n";
 import { playAlertChime } from "../lib/audioAlert";
 import { desktopBridge, type AjarNotice } from "../lib/desktop";
+import { emptyProfile, saveProfile } from "../lib/profile";
 import { previousComparable } from "../lib/scan";
 import { navigate } from "../router";
 
@@ -399,6 +400,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteHistory = useCallback(async () => {
     await api.deleteHistory();
+    saveProfile(emptyProfile()); // "delete my data" includes what the user said about themselves
     deletion.current++;
     historyRequest.current++;
     selectionRequest.current++;

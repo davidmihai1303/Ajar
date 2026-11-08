@@ -130,11 +130,24 @@ class ChatTurn(Input):
     answer: str = Field(default="", max_length=4000)
 
 
+AgeRange = Literal["under_18", "18_29", "30_49", "50_64", "65_plus"]
+TechLevel = Literal["beginner", "intermediate", "advanced"]
+
+
+class UserProfile(Input):
+    """Optional facts the user gives about themselves, so Ask can adapt its wording. Kept in the
+    browser only; sent with a question, never stored server-side."""
+    age: AgeRange | None = None
+    tech: TechLevel | None = None
+    profession: str = Field(default="", max_length=60)
+
+
 class AskRequest(Input):
     scan_id: str
     question: str = Field(min_length=1, max_length=500)
     lang: Lang = "ro"
     history: list[ChatTurn] = Field(default_factory=list, max_length=10)
+    profile: UserProfile | None = None
 
 
 class Answer(BaseModel):

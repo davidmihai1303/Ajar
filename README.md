@@ -319,6 +319,9 @@ after ten idle minutes or when the local assistant is turned off.
   each returned statement identifies its device or endpoint. Simple score questions read the scan score directly.
 - Model requests go directly to a numeric loopback address. The client normalises `localhost`
   to `127.0.0.1` and disables environment proxies and redirects.
+- **About you:** on the Ask page, "Tell Ajar about you" stores an optional age range, tech familiarity
+  and profession in this browser only. They are sent with each question to the local AI, which adapts
+  its wording, level of detail and examples (free answers only). "Remove my details" deletes them.
 - **Conversation:** Ask remembers the last 3 exchanges, so follow-ups such as "explain" or "how do I
   close them?" work. The conversation stays while you visit other pages (an answer in progress still
   arrives); opening another scan, pressing **New conversation** or reloading starts over. Earlier
