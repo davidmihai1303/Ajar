@@ -5,16 +5,10 @@ import type { ChatTurn, ModelStatus } from "../api/types";
 import { formatDate } from "../i18n";
 import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
+import { useConversation } from "../state/Conversation";
 import ErrorBanner from "../components/ErrorBanner";
 import { IconSend } from "../components/Icons";
 import PermissionDialog from "../components/PermissionDialog";
-
-interface Message {
-  question: string;
-  answer?: string;
-  muted?: boolean;
-  retry?: boolean;
-}
 
 const SUGGESTIONS = ["ask.s1", "ask.s2", "ask.s3"];
 /** Earlier exchanges sent with each question, so follow-ups ("how do I close them?") make sense. */
@@ -22,33 +16,16 @@ const HISTORY_TURNS = 3;
 
 export default function Ask() {
   const { t, lang, scan, aiConsent, setAiConsent } = useApp();
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Kept outside this page, so moving to another page does not end the conversation.
+  const { messages, setMessages, sending, setSending, active } = useConversation();
   const [question, setQuestion] = useState("");
   const [error, setError] = useState(false);
-  const [sending, setSending] = useState<number | null>(null);
   const busy = sending !== null;
   const [askConsent, setAskConsent] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const hasEvidence = !!scan && scan.findings_available && scan.score !== null && !scan.error;
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [unloadFailed, setUnloadFailed] = useState(false);
-  const active = useRef<AbortController | null>(null);
-  useEffect(() => () => active.current?.abort(), []);
-  const scanId = scan?.id;
-  useEffect(() => {
-    // A conversation belongs to one scan: start over when another scan is opened.
-    active.current?.abort();
-    active.current = null;
-    setSending(null);
-    setMessages([]);
-  }, [scanId]);
-  useEffect(() => {
-    if (aiConsent !== true && active.current) {
-      active.current.abort();
-      active.current = null;
-      setSending(null);
-    }
-  }, [aiConsent]);
 
   useEffect(() => {
     if (aiConsent !== true || !hasEvidence) return;
@@ -135,6 +112,11 @@ export default function Ask() {
 
   const route = useRoute();
   const initialQueryHandled = useRef<string | null>(null);
+  // Once a ?q= or ?draft= link has been used, drop it from the address (no new history entry): the
+  // conversation outlives this page, so coming back or pressing Back must not send or fill it again.
+  const forgetLinkText = () => {
+    if (window.location.hash.startsWith("#/ask?")) window.history.replaceState(window.history.state, "", "#/ask");
+  };
 
   useEffect(() => {
     if (route.name === "ask" && route.query && initialQueryHandled.current !== route.query) {
@@ -144,6 +126,7 @@ export default function Ask() {
       // consent change within 50 ms) cancels the timer, and the next run must send it again.
       const timer = window.setTimeout(() => {
         initialQueryHandled.current = initialText;
+        forgetLinkText();
         if (aiConsent === true) {
           void send(initialText, true);
         } else {
@@ -163,6 +146,7 @@ export default function Ask() {
     if (route.name !== "ask" || !route.draft || draftHandled.current === route.draft) return;
     draftHandled.current = route.draft;
     setQuestion(route.draft);
+    forgetLinkText();
     window.setTimeout(() => {
       const box = document.getElementById("ask-question") as HTMLTextAreaElement | null;
       if (!box || box.disabled) return;
