@@ -1,7 +1,7 @@
 // Typed fetch helpers for /api/* (network, scans, history, explain, ask).
 // Example data is available only after an explicit demo selection.
 import { demoDiff, demoExplanation, demoHistory, demoNetwork, demoScans } from "./demo";
-import type { AskResponse, Explanation, Finding, HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./types";
+import type { AskResponse, Explanation, Finding, HistoryItem, ImportResult, Lang, ModelStatus, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -115,8 +115,12 @@ export const api = {
     });
   },
 
-  modelStatus: (signal: AbortSignal): Promise<{ available: boolean }> =>
+  modelStatus: (signal: AbortSignal): Promise<ModelStatus> =>
     demo ? Promise.resolve({ available: false }) : request("/api/llm/status", { signal }),
+
+  unloadModel: async (): Promise<void> => {
+    if (!demo) await checkedResponse("/api/llm/unload", { method: "POST" });
+  },
 
   ask: (scanId: string, question: string, lang: Lang, signal?: AbortSignal): Promise<AskResponse> =>
     demo

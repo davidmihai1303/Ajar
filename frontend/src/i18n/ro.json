@@ -1,4 +1,13 @@
 {
+  "ask.starting": "Se pornește asistentul AI local…",
+  "ask.failure.weights": "Fișierul modelului lipsește sau este deteriorat. Restaurează-l din pachetul offline Ajar și încearcă din nou.",
+  "ask.failure.gpu": "Ajar nu poate folosi placa video NVIDIA. Verifică driverul și accesul Docker la placă, apoi repornește serviciile Ajar.",
+  "ask.failure.memory": "Qwen nu mai are memorie video disponibilă. Închide alte aplicații care folosesc placa video și încearcă din nou.",
+  "ask.failure.port": "Alt serviciu folosește portul 8080. Eliberează portul și repornește serviciul local al modelului.",
+  "ask.failure.load": "Qwen nu s-a putut încărca. Verifică serviciul modelului și încearcă din nou.",
+  "ask.failure.timeout": "Pornirea lui Qwen a durat peste două minute. Încearcă din nou când laptopul este pregătit.",
+  "ask.failure.server": "Serviciul local al modelului nu este disponibil. Repornește-l și încearcă din nou.",
+  "ask.unloadFailed": "Ajar nu a putut confirma oprirea modelului.",
   "ajar.state.shut": "Ajar: ușa e închisă",
   "ajar.state.ajar": "Ajar: ușa e întredeschisă",
   "ajar.state.wide": "Ajar: ușa e larg deschisă",

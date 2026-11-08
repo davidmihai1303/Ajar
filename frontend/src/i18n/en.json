@@ -1,4 +1,13 @@
 {
+  "ask.starting": "Starting local AI…",
+  "ask.failure.weights": "The model file is missing or damaged. Restore it from the Ajar offline package, then retry.",
+  "ask.failure.gpu": "Ajar cannot use the NVIDIA GPU. Check the driver and Docker GPU support, then restart the packaged services.",
+  "ask.failure.memory": "Qwen ran out of GPU memory. Close other GPU applications, then retry.",
+  "ask.failure.port": "Another service is using port 8080. Free the port and restart the packaged model service.",
+  "ask.failure.load": "Qwen could not load. Check the model service and retry.",
+  "ask.failure.timeout": "Qwen took more than two minutes to start. Retry once the laptop is ready.",
+  "ask.failure.server": "The packaged model service is unavailable. Restart it and retry.",
+  "ask.unloadFailed": "Ajar could not confirm that the model stopped.",
   "ajar.state.shut": "Ajar: the door is shut",
   "ajar.state.ajar": "Ajar: the door is ajar",
   "ajar.state.wide": "Ajar: the door is wide open",
