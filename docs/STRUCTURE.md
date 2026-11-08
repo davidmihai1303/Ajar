@@ -55,12 +55,12 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | File | Purpose |
 |---|---|
 | `fixtures/validation/` | The 8 official XML files + expected CSVs |
-| `fixtures/lab/` | Our lab scans (`scan_01.xml`, `scan_02.xml`, `scan_03_after.xml`) |
+| `fixtures/lab/` | Our lab before/after pair (`lab_before.xml`, `lab_after.xml`, copies from `lab/scans/`) |
 | `test_validation.py` | 24 rows, 8 scores, no extra rows |
 | `test_rules.py` | Rule traps |
 | `test_parser.py` | Hostile and broken input |
 | `test_history.py` | V6a → V6b diff |
-| `test_lab.py` | 0 → 75 |
+| `test_lab.py` | Brief's minimum lab on our pair (0 → 75), MACs masked |
 | `test_determinism.py` | Same output on every run |
 
 ## `frontend/src/`: React + TypeScript

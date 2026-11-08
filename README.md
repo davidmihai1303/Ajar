@@ -417,14 +417,19 @@ Details: [`lab/README.md`](lab/README.md).
 
 | Role | Device | IP |
 |---|---|---|
-| Gateway | iPhone hotspot `RSH-Byte_me` | 172.20.10.1 |
+| Gateway (and target) | iPhone hotspot `RSH-Byte_me` | 172.20.10.1 |
 | Scanner | MSI (Ubuntu, nmap 7.98) | 172.20.10.9 |
-| Target | MacBook (Docker Desktop) | 172.20.10.11 |
+| Target | MacBook (Docker Desktop + macOS sharing) | 172.20.10.11 |
+| Target | Windows laptop | 172.20.10.12 |
+| Target | Raspberry Pi | 172.20.10.13 |
 
-- **Targets:** Docker containers (Redis, Mosquitto 1.6, nginx "Router Admin Login"), fake Telnet
-  and FTP banners (no real login or shell behind them), and real macOS sharing services.
-- **Before / after:** 10 finding types and score **0** → after turning off Screen Sharing, File
-  Sharing, Remote Login, AirPlay Receiver, the fake services and Redis, the score is **75**.
+- **Targets:** an nginx container serving "Router Admin Login", fake Telnet and vsftpd 2.3.4
+  banners (no real login or shell behind them), and real services on team devices: macOS sharing,
+  Windows RDP / SMB / MySQL, SSH and VNC on the Pi.
+- **Before / after** (`lab/scans/`, MACs masked): `scan_20261108_104602_before.xml` has 9 finding
+  types and score **0**. Turning off the Mac's sharing services and the fake services (5), taking
+  the Windows laptop off the hotspot (55) and turning off VNC on the Pi gives
+  `scan_20261108_112146_after.xml`, score **75**. The pair is a test fixture (`tests/test_lab.py`).
 
 ---
 
@@ -448,7 +453,7 @@ Details: [`lab/README.md`](lab/README.md).
 | 3 | Explanations for 3 findings | Device page → finding card (RO/EN) |
 | 4 | Guardrail | `agent.py scan --target 8.8.8.8 --confirm` and `--target <venue subnet>` → refused; without `--confirm` → refused |
 | 5 | Broken file | Analyse `V7_broken.xml` → clear error, no crash |
-| 6 | History before/after | History page: our lab, 0 → 75 |
+| 6 | History before/after | History page: import the `lab/scans` before/after pair, score improving |
 | 7 | No secrets | `scripts/gitleaks.sh` (same as `gitleaks detect --source . --no-banner`) |
 
 ---
