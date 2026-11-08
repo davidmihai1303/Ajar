@@ -51,15 +51,6 @@ export default function Dashboard() {
     }
   };
 
-  const testMobileNotification = () => {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-    new Notification(t("desktop.testNotifyTitle"), {
-      body: t("desktop.testNotifyBody"),
-      icon: "/favicon.ico",
-    });
-  };
-
   const assessed = scan !== null && scan.score !== null && !scan.error;
   const first = assessed ? fixFirst(scan) : null;
   const finding = first?.findings[0] ?? null;
@@ -133,39 +124,18 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      {/* Mobile Real-time Notifications */}
+      {/* Mobile notifications button */}
       {isMobile && (
-        <div className="stack gap-m" style={{ gap: 12 }}>
-          <section className="mobile-notify-card">
-            <div className="row spread center-y">
-              <div className="row" style={{ gap: 10 }}>
-                <IconBell />
-                <div className="stack" style={{ gap: 2 }}>
-                  <span className="strong">{t("mobile.notifyTitle")}</span>
-                  <span className="muted" style={{ fontSize: 13 }}>{t("mobile.notifySubtitle")}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`button ${mobileNotifActive ? "" : "primary"}`}
-                style={{ minHeight: 36, fontSize: 13, padding: "0 12px" }}
-                onClick={enableMobileNotifications}
-              >
-                {mobileNotifActive ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
-              </button>
-            </div>
-            {mobileNotifActive && (
-              <button
-                type="button"
-                className="link-button muted"
-                style={{ fontSize: 12, padding: 0 }}
-                onClick={testMobileNotification}
-              >
-                {t("mobile.testNotify")} →
-              </button>
-            )}
-          </section>
-        </div>
+        <button
+          type="button"
+          className={`button ${mobileNotifActive ? "" : "primary"}`}
+          style={{ width: "100%", justifyContent: "center", minHeight: 44, gap: 8, marginBottom: 16 }}
+          onClick={enableMobileNotifications}
+          disabled={mobileNotifActive}
+        >
+          <IconBell />
+          {mobileNotifActive ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
+        </button>
       )}
 
       <section className="row spread end">

@@ -53,15 +53,6 @@ export default function Sidebar({
     if (notifStatus === "default") {
       const res = await requestDesktopNotification();
       setNotifStatus(res);
-      if (res === "granted") {
-        sendDesktopNotification(t("desktop.testNotifyTitle"), {
-          body: t("desktop.testNotifyBody"),
-        });
-      }
-    } else if (notifStatus === "granted") {
-      sendDesktopNotification(t("desktop.testNotifyTitle"), {
-        body: t("desktop.testNotifyBody"),
-      });
     }
   };
 
@@ -99,53 +90,34 @@ export default function Sidebar({
               type="button"
               className={`sidebar-item${notifStatus === "granted" ? " active" : ""}`}
               onClick={handleNotificationClick}
-              disabled={notifStatus === "denied"}
+              disabled={notifStatus === "granted" || notifStatus === "denied"}
               style={{
                 width: "100%",
                 background: "transparent",
                 border: 0,
                 textAlign: "left",
-                cursor: notifStatus === "denied" ? "not-allowed" : "pointer",
+                cursor: notifStatus === "default" ? "pointer" : "default",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                paddingRight: 8,
+                gap: 10,
                 opacity: notifStatus === "denied" ? 0.6 : 1,
               }}
               title={
                 notifStatus === "denied"
                   ? t("desktop.notifyDeniedTooltip")
                   : notifStatus === "granted"
-                  ? `${t("desktop.notifyEnabledShort")} - ${t("desktop.testNotify")}`
+                  ? t("desktop.notifyEnabledShort")
                   : t("desktop.notifyEnable")
               }
             >
-              <span style={{ display: "flex", alignItems: "center", gap: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                <IconBell />
-                <span>
-                  {notifStatus === "granted"
-                    ? t("desktop.notifyEnabledShort")
-                    : notifStatus === "denied"
-                    ? t("desktop.notifyDenied")
-                    : t("desktop.notifyEnable")}
-                </span>
+              <IconBell />
+              <span>
+                {notifStatus === "granted"
+                  ? "✓ " + t("desktop.notifyEnabledShort")
+                  : notifStatus === "denied"
+                  ? t("desktop.notifyDenied")
+                  : t("desktop.notifyEnable")}
               </span>
-              {notifStatus === "granted" && (
-                <span
-                  className="chip"
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    background: "var(--hover, rgba(0,0,0,0.06))",
-                    color: "var(--ink)",
-                    border: "1px solid var(--line)",
-                  }}
-                >
-                  Test
-                </span>
-              )}
             </button>
           )}
         </div>
