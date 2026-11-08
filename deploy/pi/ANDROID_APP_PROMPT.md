@@ -8,8 +8,26 @@ implemented in `deploy/pi/ajar_notify.py`; if the Pi changes, update this file.
 # Task: Android companion app "Ajar" – instant network notifications from a Raspberry Pi
 
 Build a small native Android app (Kotlin, Jetpack Compose, minSdk 26, targetSdk 35) that pairs with an
-"Ajar" Raspberry Pi on the same Wi-Fi and shows a local notification within seconds when the Pi reports
-an event. No backend, no Firebase/FCM, no external service: the phone talks only to the Pi on the LAN.
+"Ajar" Raspberry Pi on the same Wi-Fi, shows the Pi's own web interface, and shows a local notification
+within seconds when the Pi reports an event, also with the screen off. No backend, no Firebase/FCM, no
+external service: the phone talks only to the Pi on the LAN.
+
+## 0. Main screen: the Pi's web UI in a WebView
+The Pi already serves a complete, phone-optimised web app (dashboard, devices, history, inbox, Ask) at
+`http://<host>:8001`. Do NOT rebuild those screens natively: the app's main screen is a `WebView` on that
+URL. The native parts are only pairing, the background notification service, and settings.
+- The Pi must run in "LAN test mode" (`NETCHECK_BIND_HOST=0.0.0.0`, `NETCHECK_ALLOWED_HOSTS=<pi ip or
+  name>`). The web app checks the HTTP Host header: load it with exactly a host that is in that list
+  (the IP the user configured, or the name), otherwise the Pi answers "Invalid host header". Show a clear
+  message for that case ("Add this address to NETCHECK_ALLOWED_HOSTS on the Pi").
+- WebView settings: JavaScript and DOM storage on; no file access, no content access, no mixed content;
+  `WebViewClient.shouldOverrideUrlLoading` keeps navigation inside `http://<host>:8001/` and opens
+  anything else in the system browser. Do not add a JavaScript bridge (`addJavascriptInterface`).
+- Allow the page's vibration; the page's own in-tab alerts (chime, vibration, inbox) only work while it
+  is open, which is why the native service below exists.
+- Pull-to-refresh and a "Reload" action; show an offline screen when the Pi is unreachable.
+- The web UI has no login in LAN mode: anyone on the same Wi-Fi can open it. The app must not add any
+  credential to WebView requests (the events token is for port 8002 only).
 
 ## 1. Finding the Pi
 The Pi announces itself via mDNS / DNS-SD as type `_ajar._tcp` (TXT: `api=events/1`, `auth=bearer`),
@@ -97,9 +115,12 @@ Language follows the system locale (ro → Romanian, else English). Tap → even
 
 ## 6. Screens
 1. Find & pair (discovered Pis, manual address, big verification code, status of the request).
-2. Status: Pi name, connected / waiting / not on home Wi-Fi, last contact, "Monitoring" toggle.
-3. Events: last 50 received (Room or a small JSON file), newest first.
-4. Settings: Unpair (deletes everything locally), battery-optimisation shortcut.
+2. **Main: the Pi's web UI in a WebView** (section 0). A small native status strip on top: connected /
+   not on home Wi-Fi, notifications on/off.
+3. Events: last 50 notifications received natively (Room or a small JSON file), newest first; tapping one
+   opens the WebView on the Pi's dashboard.
+4. Settings: web UI address (host + port 8001), Unpair (deletes everything locally),
+   battery-optimisation shortcut.
 Min 16 sp text, TalkBack labels, colour never the only signal, dark mode.
 
 ## 7. Security and privacy
@@ -119,6 +140,8 @@ format check, event → text mapping ro/en incl. unknown type, backoff, status c
 Integration (MockWebServer): full pairing flow, long-poll returning an event, empty timeout, 401 stop.
 
 Done when:
+- [ ] Opening the app shows the Pi's web dashboard (phone layout) in the WebView; links outside the Pi
+      open in the system browser; "Invalid host header" shows the guidance message.
 - [ ] With `ajar_notify.py pair` open on the Pi, the app finds the Pi, both show the same code, the
       owner types DA on the Pi, and the app is paired. Rejecting on the Pi leaves the app unpaired.
 - [ ] With the app in the background and the screen off, a new device on the Pi's network produces a
