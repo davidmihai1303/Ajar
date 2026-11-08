@@ -1,7 +1,9 @@
 // Optional local Q&A grounded only in the current scan.
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
-import type { ChatTurn, ModelStatus } from "../api/types";
+import type { ChatTurn, ModelStatus, UserProfile } from "../api/types";
+import ProfileDialog from "../components/ProfileDialog";
+import { isEmptyProfile, loadProfile, saveProfile } from "../lib/profile";
 import { formatDate } from "../i18n";
 import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
@@ -25,6 +27,18 @@ export default function Ask() {
   const [pending, setPending] = useState<string | null>(null);
   const hasEvidence = !!scan && scan.findings_available && scan.score !== null && !scan.error;
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  // Optional "About you" details; kept in this browser, sent with each question to the local AI.
+  const [profile, setProfile] = useState<UserProfile>(loadProfile);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const updateProfile = (value: UserProfile) => {
+    saveProfile(value);
+    setProfile(value);
+  };
+  const profileSummary = [
+    profile.tech && t("profile.techShort." + profile.tech),
+    profile.age && t("profile.age." + profile.age),
+    profile.profession,
+  ].filter(Boolean).join(" · ");
   const [unloadFailed, setUnloadFailed] = useState(false);
 
   useEffect(() => {
@@ -92,7 +106,8 @@ export default function Ask() {
       }
     };
     try {
-      const answer = await api.ask(scan.id, trimmed, lang, controller.signal, history);
+      const answer = await api.ask(scan.id, trimmed, lang, controller.signal, history,
+        isEmptyProfile(profile) ? null : profile);
       if (controller.signal.aborted) return;
       let message = answer.answer ?? t(answer.available ? "ask.cannotAnswer" : "ask.off");
       if (!answer.available) {
@@ -180,6 +195,25 @@ export default function Ask() {
             </button>
           )}
         </div>
+      )}
+      {hasEvidence && aiConsent !== false && (
+        <p className="profile-line">
+          {isEmptyProfile(profile) ? (
+            <button type="button" className="link-button" onClick={() => setEditingProfile(true)}>
+              {t("profile.button")}
+            </button>
+          ) : (
+            <>
+              <span className="muted">{t("profile.summary", { who: profileSummary })}</span>{" "}
+              <button type="button" className="link-button" onClick={() => setEditingProfile(true)}>
+                {t("profile.edit")}
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {editingProfile && (
+        <ProfileDialog profile={profile} onSave={updateProfile} onClose={() => setEditingProfile(false)} />
       )}
       {aiConsent === false && (
         <ErrorBanner

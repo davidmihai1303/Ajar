@@ -104,6 +104,16 @@ export interface ImportResult {
   error: string | null;
 }
 
+export type AgeRange = "under_18" | "18_29" | "30_49" | "50_64" | "65_plus";
+export type TechLevel = "beginner" | "intermediate" | "advanced";
+
+/** What the user chose to tell Ajar about themselves (mirrors api/schemas.py UserProfile). */
+export interface UserProfile {
+  age: AgeRange | null;
+  tech: TechLevel | null;
+  profession: string;
+}
+
 /** One earlier exchange of the same Ask conversation (mirrors api/schemas.py ChatTurn). */
 export interface ChatTurn {
   question: string;

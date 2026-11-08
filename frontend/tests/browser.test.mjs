@@ -521,3 +521,40 @@ test("the device list shows IP, masked MAC, maker and type without opening a row
   assert.match(text, /Router/);
   assert.match(text, /IP 192\.168\.1\.1 · MAC 50:C7:BF:xx:xx:xx/);
 });
+
+test("About you: the profile is saved in this browser and sent with Ask questions", async (t) => {
+  const bodies = [];
+  const page = await open(t, "ask", { onApi(path, request) {
+    if (path === "/api/llm/status") return { json: { available: true, state: "ready" } };
+    if (path === "/api/ask") {
+      bodies.push(request.postDataJSON());
+      return { json: { available: true, can_answer: true, answer: `Answer ${bodies.length}` } };
+    }
+  } });
+  await page.evaluate(() => localStorage.setItem("ajar.ai", "yes"));
+  await page.reload();
+  await page.getByRole("button", { name: "Tell Ajar about you" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Age").selectOption("65_plus");
+  await dialog.getByLabel("How familiar are you with technology?").selectOption("beginner");
+  await dialog.getByLabel("Profession (optional)").fill("  retired   teacher ");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await page.getByText("Answers adapted for: beginner · 65 or older · retired teacher").waitFor();
+  const input = page.getByRole("textbox");
+  await input.fill("Is my router safe?");
+  await input.press("Enter");
+  await page.getByText("Answer 1").waitFor();
+  assert.deepEqual(bodies[0].profile, { age: "65_plus", tech: "beginner", profession: "retired teacher" });
+  // Kept after a reload, in this browser only.
+  await page.reload();
+  await page.getByText("Answers adapted for: beginner · 65 or older · retired teacher").waitFor();
+  // Removing it stops sending it.
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove my details" }).click();
+  await page.getByRole("button", { name: "Tell Ajar about you" }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("ajar.profile")), null);
+  await input.fill("And now?");
+  await input.press("Enter");
+  await page.getByText("Answer 2").waitFor();
+  assert.equal("profile" in bodies[1], false);
+});
