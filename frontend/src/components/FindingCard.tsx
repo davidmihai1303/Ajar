@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, Finding } from "../api/types";
 import { useApp } from "../state/AppState";
+import { referencesFor } from "../lib/references";
 import { SeverityBadge } from "./ScoreBadge";
 
 export default function FindingCard({ finding }: { finding: Finding }) {
@@ -80,8 +81,28 @@ export default function FindingCard({ finding }: { finding: Finding }) {
           <p className="mono">
             {finding.code} · {finding.port === null ? t("finding.noPort") : `${finding.protocol}/${finding.port}`} · {finding.evidence}
           </p>
+          <References code={finding.code} />
         </details>
       </div>
     </article>
   );
 }
+
+/** CIS Controls v8 / OWASP IoT Top 10 references, used here and in the printable report. */
+export function References({ code }: { code: string }) {
+  const { t } = useApp();
+  const refs = referencesFor(code);
+  if (refs.length === 0) return null;
+  return (
+    <p className="references">
+      <span className="muted">{t("finding.references")}</span>{" "}
+      {refs.map((ref, index) => (
+        <span key={ref.id}>
+          {index > 0 && " · "}
+          <abbr title={ref.name}>{ref.id}</abbr>
+        </span>
+      ))}
+    </p>
+  );
+}
+

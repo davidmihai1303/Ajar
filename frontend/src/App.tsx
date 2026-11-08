@@ -15,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import History from "./pages/History";
+import Report from "./pages/Report";
 import Scan from "./pages/Scan";
 import ScanProgress from "./pages/ScanProgress";
 import Welcome from "./pages/Welcome";
@@ -71,6 +72,9 @@ function Shell() {
           break;
         case "ask":
           page = <Ask key={scan?.id} />;
+          break;
+        case "report":
+          page = <Report />;
           break;
         default:
           page = <Dashboard />;

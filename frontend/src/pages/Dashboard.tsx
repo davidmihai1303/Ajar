@@ -100,6 +100,7 @@ export default function Dashboard() {
             {delta === 0 ? t("dashboard.same") : t(delta > 0 ? "dashboard.up" : "dashboard.down", { delta: Math.abs(delta) })}
           </a>
         )}
+        <a className="button" href={href({ name: "report" })}>{t("report.open")}</a>
       </section>
 
       {first && finding ? (

@@ -46,6 +46,7 @@ you can **prove** the network got safer after the fix.
 | **Proof** | Stores every scan, shows what changed and the score trend | FR-10, FR-13 |
 | **UI** | Web page showing score, most dangerous device, fixes and history | FR-11 |
 | **Grading output** | `findings.csv` + `scores.csv` for a whole folder in one command | FR-15 |
+| **Report** | One-page report (print or save as PDF) with score, devices, fixes and CIS / OWASP IoT references | FR-14 |
 | **Assistant** (optional) | Answers questions using only evidence from the scan | FR-12 |
 
 ---
