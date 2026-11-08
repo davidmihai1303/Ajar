@@ -216,7 +216,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .device-row summary { display: flex; align-items: center; gap: 14px; padding: 16px 18px; cursor: pointer; list-style: none; }
 .device-row summary::-webkit-details-marker { display: none; }
 .device-row summary:hover { background: var(--canvas); }
-.device-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.device-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
 .device-points { width: 52px; text-align: right; }
 .device-details { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; padding: 0 18px 16px 76px; color: var(--muted); }
 .finding-high { border-color: #c9bcae; }
@@ -365,7 +365,6 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 
 .mobile-brand { display: flex; flex-direction: column; gap: 0; text-decoration: none; min-width: 0; }
 .mobile-logo { display: block; height: 48px; width: auto; }
-.mobile-network { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Phone widget: Ajar on the left, a few numbers on the right (dashboard top and #/widget). */
 .ajar-widget { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 14px 18px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); text-decoration: none; box-shadow: 0 6px 20px rgba(42, 36, 32, 0.08); }
@@ -422,7 +421,7 @@ html.toast-window #root { padding: 12px; }
 .ajar-toast.standalone { animation-name: ajar-toast-up; }
 @keyframes ajar-toast-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-.sidebar-button { width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; font: inherit; }
+.sidebar-button { width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; }
 .download-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .download-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .download-steps code, .banner code { overflow-wrap: anywhere; }
