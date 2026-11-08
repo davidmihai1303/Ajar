@@ -3,8 +3,11 @@
 .ajar { display: block; width: 100%; }
 .ajar svg { display: block; width: 100%; height: auto; overflow: visible; }
 
+/* The hinge is the door's own left edge (x = 98, the frame's inner edge). It is set relative to the
+   door's box, not to the SVG viewBox, so every browser turns the door on the same line and it can
+   never drift away from the frame. Nothing inside the door group may extend left of x = 98. */
 .ajar .door-swing,
-.ajar .door-sway { transform-box: view-box; transform-origin: 98px 125px; }
+.ajar .door-sway { transform-box: fill-box; transform-origin: 0% 50%; }
 .ajar .door-swing { transition: transform 0.6s cubic-bezier(0.34, 1.4, 0.64, 1); }
 /* The door turns on its hinge only (no skew), so its edges stay level with the frame and it never
    looks like it is hanging off. The hinge (x = 98) is the frame's inner left edge. */
