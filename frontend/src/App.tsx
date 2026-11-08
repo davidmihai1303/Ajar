@@ -9,6 +9,7 @@ import { useIsMobile } from "./lib/useIsMobile";
 import { useMobilePoller } from "./lib/useMobilePoller";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
+import { InboxProvider } from "./state/Inbox";
 import AjarDock from "./components/AjarDock";
 import AjarWidget from "./components/AjarWidget";
 import ErrorBanner from "./components/ErrorBanner";
@@ -19,6 +20,7 @@ import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import History from "./pages/History";
+import Inbox from "./pages/Inbox";
 import Report from "./pages/Report";
 import Scan from "./pages/Scan";
 import ScanProgress from "./pages/ScanProgress";
@@ -62,8 +64,8 @@ function Shell() {
   } else {
     let page: JSX.Element;
     if (isMobile) {
-      page = <Dashboard />;
-    } else if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask") {
+      page = route.name === "inbox" ? <Inbox /> : <Dashboard />;
+    } else if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask" && route.name !== "inbox") {
       page = (
         <div className="page">
           <p>{t("common.noScan")}</p>
@@ -91,6 +93,9 @@ function Shell() {
           break;
         case "report":
           page = <Report />;
+          break;
+        case "inbox":
+          page = <Inbox />;
           break;
         default:
           page = <Dashboard />;
@@ -135,7 +140,9 @@ function Shell() {
 export default function App() {
   return (
     <AppProvider>
-      <Shell />
+      <InboxProvider>
+        <Shell />
+      </InboxProvider>
     </AppProvider>
   );
 }

@@ -367,7 +367,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .mobile-network { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Phone widget: Ajar on the left, a few numbers on the right (dashboard top and #/widget). */
-.ajar-widget { display: flex; align-items: center; gap: 16px; padding: 14px 18px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); text-decoration: none; box-shadow: 0 6px 20px rgba(42, 36, 32, 0.08); }
+.ajar-widget { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 14px 18px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); text-decoration: none; box-shadow: 0 6px 20px rgba(42, 36, 32, 0.08); }
 .ajar-widget:hover { color: var(--text); }
 .ajar-widget-mascot { flex: none; width: 96px; }
 .ajar-widget-stats { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
@@ -378,6 +378,26 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .ajar-widget-meta { font-size: 13px; }
 .widget-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--canvas); }
 .ajar-widget.standalone { width: 100%; max-width: 420px; }
+
+/* Notification inbox */
+.inbox-badge { margin-left: auto; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px; background: var(--red); color: #fff; font: 700 14px/24px var(--sans); text-align: center; }
+.sidebar-item.active .inbox-badge { background: #fff; color: var(--walnut); }
+.mobile-bell { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; color: var(--text); }
+.mobile-bell:hover { background: var(--hover); }
+.mobile-bell .inbox-badge { position: absolute; top: 0; right: -4px; margin: 0; min-width: 20px; height: 20px; font-size: 12px; line-height: 20px; padding: 0 5px; }
+.inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.inbox-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.inbox-item.read { background: transparent; }
+.inbox-item.read .inbox-text { color: var(--muted); font-weight: 400; }
+.inbox-check { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -8px 0 -8px -10px; cursor: pointer; }
+.inbox-check input { width: 22px; height: 22px; accent-color: var(--walnut); cursor: pointer; }
+.inbox-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--sidebar); display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.inbox-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.inbox-text { font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.inbox-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+.inbox-date { font-size: 14px; }
+.inbox-open { flex: none; }
+@media (max-width: 480px) { .inbox-icon { display: none; } .inbox-item { padding: 10px 12px; gap: 8px; } }
 
 .mobile-notify-card {
   border: 1.5px solid var(--oak);

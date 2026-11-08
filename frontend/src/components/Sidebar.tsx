@@ -4,6 +4,7 @@ import { formatDate } from "../i18n";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href, type Route } from "../router";
 import { useApp } from "../state/AppState";
+import { useInbox } from "../state/Inbox";
 import {
   IconAsk,
   IconBell,
@@ -19,6 +20,7 @@ const NAV = [
   { route: { name: "dashboard" } as Route, key: "nav.dashboard", icon: <IconDashboard /> },
   { route: { name: "devices" } as Route, key: "nav.devices", icon: <IconDevices /> },
   { route: { name: "history" } as Route, key: "nav.history", icon: <IconHistory /> },
+  { route: { name: "inbox" } as Route, key: "nav.inbox", icon: <IconBell /> },
   { route: { name: "ask" } as Route, key: "nav.ask", icon: <IconAsk /> },
 ];
 
@@ -29,6 +31,7 @@ export default function Sidebar({
 }) {
   const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications } = useApp();
   const isMobile = useIsMobile();
+  const { unread } = useInbox();
   const active = current === "device" ? "devices" : current === "home" ? "dashboard" : current;
   const navItems = NAV.filter((item) => !(isMobile && item.route.name === "ask"));
 
@@ -47,6 +50,9 @@ export default function Sidebar({
           <a key={item.key} href={href(item.route)} className={`sidebar-item${active === item.route.name ? " active" : ""}`} aria-current={active === item.route.name ? "page" : undefined}>
             {item.icon}
             {t(item.key)}
+            {item.route.name === "inbox" && unread > 0 && (
+              <span className="inbox-badge" aria-label={t("inbox.unreadCount", { count: unread })}>{unread}</span>
+            )}
           </a>
         ))}
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
