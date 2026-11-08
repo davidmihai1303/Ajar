@@ -109,7 +109,10 @@ gitleaks detect --source . --no-banner           # must be clean
 - Conversation (Ask is turn-based): the page sends up to 3 earlier exchanges (`AskRequest.history`,
   `ChatTurn`; the API accepts at most 10). Only free answers use them, as earlier chat turns, oldest
   dropped first (`MAX_HISTORY_TURNS`, `MAX_HISTORY_CHARS`), MACs masked and Markdown removed. Nothing is
-  stored server-side; a conversation belongs to one scan and resets when another scan is opened.
+  stored server-side. The conversation lives in `frontend/src/state/Conversation.tsx` (memory only), so
+  it survives moving between pages and an answer in progress still arrives; it belongs to one scan and
+  resets when another scan is opened, on **New conversation**, or on reload. A used `#/ask?q=` /
+  `?draft=` link is replaced by `#/ask`, so Back never sends or fills it twice.
 - Everything sent to the model (scan facts, question, prompt, history) must fit the bundled model's
   4,096-token context together with the answer (`max_tokens` 600). Re-check the budgets when adding input.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
