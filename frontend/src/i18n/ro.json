@@ -246,6 +246,7 @@
   "history.deleteText": "Se șterg toate scanările salvate pe acest computer. Nu le mai poți recupera.",
   "history.deleteConfirm": "Șterge istoricul",
   "ask.turnOff": "Oprește asistentul local",
+  "ask.newChat": "Conversație nouă",
   "ask.title": "Întreabă-mă despre rețeaua ta",
   "ask.about": "Despre scanarea din {date}, rețeaua {ssid}",
   "ask.s1": "Care e cel mai periculos dispozitiv?",

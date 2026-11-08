@@ -104,6 +104,12 @@ export interface ImportResult {
   error: string | null;
 }
 
+/** One earlier exchange of the same Ask conversation (mirrors api/schemas.py ChatTurn). */
+export interface ChatTurn {
+  question: string;
+  answer: string;
+}
+
 export interface AskResponse {
   available: boolean; // false when the requested answer needed an unavailable model
   can_answer: boolean; // false when the scan has no evidence for the question

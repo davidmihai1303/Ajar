@@ -319,6 +319,9 @@ after ten idle minutes or when the local assistant is turned off.
   each returned statement identifies its device or endpoint. Simple score questions read the scan score directly.
 - Model requests go directly to a numeric loopback address. The client normalises `localhost`
   to `127.0.0.1` and disables environment proxies and redirects.
+- **Conversation:** Ask remembers the last 3 exchanges, so follow-ups such as "explain" or "how do I
+  close them?" work. Opening another scan or pressing **New conversation** starts over. Earlier
+  exchanges are sent with the question only (MACs masked); nothing is stored on the server.
 - **Try it against the real model:** `docker compose run --rm app python -m netcheck.explain.smoke`
 
 ---

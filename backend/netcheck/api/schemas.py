@@ -124,10 +124,17 @@ class PersonalizeRequest(FindingRef):
     lang: Lang = "ro"
 
 
+class ChatTurn(Input):
+    """One earlier exchange of the same Ask conversation, sent back by the page."""
+    question: str = Field(min_length=1, max_length=500)
+    answer: str = Field(default="", max_length=4000)
+
+
 class AskRequest(Input):
     scan_id: str
     question: str = Field(min_length=1, max_length=500)
     lang: Lang = "ro"
+    history: list[ChatTurn] = Field(default_factory=list, max_length=10)
 
 
 class Answer(BaseModel):
