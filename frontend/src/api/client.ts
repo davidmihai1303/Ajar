@@ -1,6 +1,7 @@
 // Typed fetch helpers for /api/* (network, scans, history, explain, ask).
 // Example data is available only after an explicit demo selection.
 import { demoAsk, demoDiff, demoExplanation, demoHistory, demoNetwork, demoScans } from "./demo";
+import type { DesktopDownload } from "../lib/desktop";
 import type { AskResponse, ChatTurn, Explanation, Finding, HistoryItem, ImportResult, Lang, ModelStatus, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./types";
 
 export class ApiError extends Error {
@@ -114,6 +115,9 @@ export const api = {
       body: JSON.stringify({ scan_id: scanId, code, ip, port, protocol, lang }),
     });
   },
+
+  // The Ajar desktop app for Ubuntu, if it was built on this computer (desktop/build.sh).
+  downloads: (): Promise<DesktopDownload[]> => request<DesktopDownload[]>("/api/downloads").catch(() => []),
 
   modelStatus: (signal: AbortSignal): Promise<ModelStatus> =>
     demo ? Promise.resolve({ available: false }) : request("/api/llm/status", { signal }),

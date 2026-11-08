@@ -7,11 +7,13 @@ import LanguageToggle from "./components/LanguageToggle";
 import MobileHeader from "./components/MobileHeader";
 import { useIsMobile } from "./lib/useIsMobile";
 import { useMobilePoller } from "./lib/useMobilePoller";
-import { navigate, useRoute } from "./router";
+import { isDesktopApp } from "./lib/desktop";
+import { navigate, parseRoute, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
 import { ConversationProvider } from "./state/Conversation";
 import { InboxProvider } from "./state/Inbox";
 import AjarDock from "./components/AjarDock";
+import AjarToast from "./components/AjarToast";
 import AjarWidget from "./components/AjarWidget";
 import ErrorBanner from "./components/ErrorBanner";
 import PermissionDialog from "./components/PermissionDialog";
@@ -24,6 +26,7 @@ import History from "./pages/History";
 import Inbox from "./pages/Inbox";
 import Report from "./pages/Report";
 import Scan from "./pages/Scan";
+import ToastWindow from "./pages/ToastWindow";
 import ScanProgress from "./pages/ScanProgress";
 import Welcome from "./pages/Welcome";
 
@@ -32,7 +35,8 @@ function Shell() {
   const { t, ready, scan, scanning, flow, acceptFlow, cancelFlow, demo, collapsed } = app;
   const route = useRoute();
   const isMobile = useIsMobile();
-  useMobilePoller(isMobile);
+  // The phone and the desktop app (often hidden in the tray) watch for scans made elsewhere.
+  useMobilePoller(isMobile || isDesktopApp());
 
   useEffect(() => {
     if (ready && scan && route.name === "home") navigate({ name: "dashboard" });
@@ -134,11 +138,27 @@ function Shell() {
       {content}
       {!isMobile && !app.loadFailed && route.name !== "widget" && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
+      {app.toast && !isMobile && route.name !== "widget" && (
+        <div className="ajar-toast-host">
+          <AjarToast
+            key={app.toast.id}
+            notice={app.toast}
+            labels={{ open: t("common.open"), close: t("common.close"), mascot: "Ajar" }}
+            onOpen={() => {
+              app.dismissToast();
+              navigate({ name: "dashboard" });
+            }}
+            onClose={app.dismissToast}
+          />
+        </div>
+      )}
     </>
   );
 }
 
 export default function App() {
+  // The desktop app's notification window shows only Ajar and the text: no app state, no API.
+  if (parseRoute(window.location.hash).name === "toast") return <ToastWindow />;
   return (
     <AppProvider>
       <ConversationProvider>

@@ -3,13 +3,17 @@
 import { formatDate } from "../i18n";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href, type Route } from "../router";
+import { isDesktopApp } from "../lib/desktop";
 import { useApp } from "../state/AppState";
+import { useState } from "react";
+import DownloadDialog from "./DownloadDialog";
 import { useInbox } from "../state/Inbox";
 import {
   IconAsk,
   IconBell,
   IconDashboard,
   IconDevices,
+  IconDownload,
   IconHistory,
   IconPlus,
   IconSidebar,
@@ -32,6 +36,8 @@ export default function Sidebar({
   const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications } = useApp();
   const isMobile = useIsMobile();
   const { unread } = useInbox();
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const offerDownload = !isMobile && !isDesktopApp();
   const active = current === "device" ? "devices" : current === "home" ? "dashboard" : current;
   const navItems = NAV.filter((item) => !(isMobile && item.route.name === "ask"));
 
@@ -56,6 +62,12 @@ export default function Sidebar({
           </a>
         ))}
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
+          {offerDownload && (
+            <button type="button" className="sidebar-item sidebar-button" onClick={() => setDownloadOpen(true)}>
+              <IconDownload />
+              {t("download.open")}
+            </button>
+          )}
           <button
             type="button"
             className={`sidebar-item${notificationsEnabled ? " active" : ""}`}
@@ -103,6 +115,7 @@ export default function Sidebar({
           {t("nav.hide")}
         </button>
       </div>
+      {downloadOpen && <DownloadDialog onClose={() => setDownloadOpen(false)} />}
     </aside>
   );
 }

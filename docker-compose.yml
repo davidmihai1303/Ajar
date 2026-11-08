@@ -13,8 +13,10 @@ services:
     environment:
       - NETCHECK_DB=/data/db/netcheck.sqlite
       - NETCHECK_SCANS_DIR=/data/scans
+      - NETCHECK_DOWNLOADS_DIR=/data/downloads
     volumes:
       - /var/lib/netcheck/scans:/data/scans:ro   # XML written by the root wrapper
       - ./data:/data/db                          # SQLite history (local only)
       - ./input:/data/input                      # Validation / Test Set folders
+      - ./release/downloads:/data/downloads:ro   # Ajar desktop app for Ubuntu (desktop/build.sh)
     restart: unless-stopped

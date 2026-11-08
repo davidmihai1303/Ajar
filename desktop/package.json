@@ -1,0 +1,54 @@
+{
+  "name": "ajar-desktop",
+  "productName": "Ajar",
+  "version": "1.0.0",
+  "description": "Ajar desktop app for Ubuntu: the local network checker in a window, in the tray, with Ajar's notifications.",
+  "author": "Ajar team <ajar@localhost>",
+  "homepage": "https://github.com/davidmihai1303/Smarthack",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage deb --x64 --arm64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "ro.ajar.desktop",
+    "productName": "Ajar",
+    "artifactName": "Ajar-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "offline.html",
+      "assets/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network",
+      "icon": "assets/icon.png",
+      "executableName": "ajar",
+      "synopsis": "Local network security checker",
+      "maintainer": "Ajar team <ajar@localhost>",
+      "desktop": {
+        "StartupWMClass": "Ajar",
+        "Name": "Ajar",
+        "Comment": "Local network security checker"
+      }
+    },
+    "deb": {
+      "afterInstall": "build/after-install.sh",
+      "afterRemove": "build/after-remove.sh"
+    }
+  }
+}
