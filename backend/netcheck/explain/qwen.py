@@ -10,7 +10,7 @@ from .llm import LLMClient
 
 
 class ManagedQwen(LLMClient):
-    def __init__(self, directory: str, timeout: float, *, transport=None):
+    def __init__(self, directory: str, timeout: float, *, transport: httpx.BaseTransport | None = None):
         super().__init__("http://127.0.0.1:8080/v1", model="local", timeout=timeout)
         self.directory = Path(directory)
         self.socket = self.directory / "router.sock"
@@ -18,7 +18,7 @@ class ManagedQwen(LLMClient):
         self.lifecycle = threading.Lock()
         self.generation = 0
         self.waking = False
-        self.last_failure = None
+        self.last_failure: str | None = None
 
     def _client(self, timeout: float) -> httpx.Client:
         # The URL remains loopback. The shared private socket pins every HTTP request
@@ -33,8 +33,11 @@ class ManagedQwen(LLMClient):
                             trust_env=False, follow_redirects=False)
 
     def _reason(self, fallback: str) -> str:
+        marker = self.directory / "failure"
         try:
-            reason = (self.directory / "failure").read_text().strip()
+            reason = marker.read_text().strip()
+            if fallback == "server" and reason == "starting" and time.time() - marker.stat().st_mtime < 120:
+                return "booting"
         except OSError:
             return fallback
         return reason if reason in {"weights", "gpu", "memory", "port"} else fallback
@@ -55,6 +58,8 @@ class ManagedQwen(LLMClient):
                 return states[status["value"]], None
         except httpx.ConnectError:
             reason = self._reason("server")
+            if reason == "booting":
+                return "booting", None
             if reason == "server":
                 # Diagnose a conflict without sending the listener any HTTP data.
                 with socket.socket() as probe:
@@ -63,10 +68,12 @@ class ManagedQwen(LLMClient):
                         reason = "port"
             return "failed", reason
         except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError):
-            return "failed", self._reason("server")
+            return "failed", "server"
 
     def status(self) -> dict:
         state, reason = self._router_state()
+        if state == "booting":
+            state = "starting"
         with self._lock:
             if self.waking and state != "ready":
                 state, reason = "starting", None
@@ -92,6 +99,14 @@ class ManagedQwen(LLMClient):
                     return False
                 self.last_failure = None
             state, reason = self._router_state()
+            while state == "booting":
+                with self._lock:
+                    if generation != self.generation:
+                        return False
+                if time.monotonic() >= deadline:
+                    raise httpx.ReadTimeout("router startup")
+                time.sleep(0.25)
+                state, reason = self._router_state()
             if state == "ready":
                 return True
             if reason in {"server", "port", "weights", "gpu"}:

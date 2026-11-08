@@ -301,6 +301,11 @@ byte-for-byte reproducible.
 
 ## 8. Explanations and the optional LLM
 
+The [offline Qwen package](runtime/qwen/README.md) ships the app, its local CUDA
+server and the model weights. After installation, send a question in **Ask** to
+load Qwen. The first answer appears in the same chat. Model memory is released
+after ten idle minutes or when the local assistant is turned off.
+
 - **Built-in texts** (`backend/netcheck/explain/texts/*.yaml`): one explanation of at most two sentences
   and 1–5 fix steps per code, in Romanian and English, at roughly a 12-year-old reading level.
   Context variants exist where the code alone would mislead. For example, `rtsp` on a Mac is AirPlay, not a camera.

@@ -159,7 +159,7 @@ export default function Ask() {
                 disabled={busy} onClick={() => void send(message.question, false, index)}>{t("common.retry")}</button>}
             </p>}
             {sending === index && <p className="bubble-ajar muted">
-              {t(status?.state === "starting" || status?.state === "idle" ? "ask.starting" : "ask.thinking")}
+              {t(status?.state === "starting" ? "ask.starting" : "ask.thinking")}
             </p>}
           </Fragment>
         ))}
