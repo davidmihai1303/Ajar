@@ -61,7 +61,18 @@ Validation Set: all 24 rows, no extra rows, 8/8 scores (`tests/test_validation.p
 
 ## LLM use
 
-Optional. A local llama-server (Qwen, loopback only, no proxies or redirects) only *selects* scan records
-by ID for the Q&A assistant and "explain for my device". Python renders every fact from the scan.
-Unknown IDs, malformed replies, timeouts or a missing model fall back to the built-in texts.
-Findings, severities and scores never touch the LLM. MAC addresses, raw banners and page titles are never sent to it.
+Optional, only in **Ask** (the Q&A assistant). A local llama-server runs Qwen on loopback only, with no
+proxies and no redirects. Findings, severities, scores, explanations and fix steps never come from the
+model. The finding cards always show the team's own texts. "Explain for my device" only fills in an
+Ask question built from catalog facts; the user reads it and sends it.
+
+- **Free answers (default, `LLM_FREE_ANSWERS=1`):** the model writes the answer from the current scan's
+  facts (score → findings, most severe first → devices and ports). It also gets the last 3 exchanges and
+  the optional "About you" profile, which only adapts the wording and never counts as evidence.
+  `explain/grounding.py` checks every reply (NFR-06). A reply that names an IP, a port (or a port on the
+  wrong device), a version, a device maker, a CVE or a phone number the scan does not show is replaced
+  by the verified answer. The check covers these concrete identifiers, not the meaning of every sentence.
+- **Record-only (`LLM_FREE_ANSWERS=0`, strict mode):** the model only picks record IDs offered for that
+  question, and Python writes every sentence from the scan. Model text is never shown.
+- **Fallback:** an IP outside the scan, a timeout or a missing model give the built-in answer or "not
+  available". MAC addresses, raw banners and page titles are never sent to the model.
