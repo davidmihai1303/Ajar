@@ -82,5 +82,6 @@ def unload_model(request: Request):
 @router.post("/ask")
 def ask(body: api.AskRequest, request: Request) -> api.Answer:
     scan = scan_view(saved(request.app.state.db, body.scan_id))
-    result = llm.ask(request.app.state.model, body.question, evidence(scan), body.lang)
+    history = [(turn.question, turn.answer) for turn in body.history]
+    result = llm.ask(request.app.state.model, body.question, evidence(scan), body.lang, history)
     return api.Answer(available=not result.unavailable, can_answer=result.grounded, answer=result.text)

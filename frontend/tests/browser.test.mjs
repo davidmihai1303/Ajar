@@ -394,3 +394,121 @@ test("the notification inbox can be checked off, filtered and remembers what was
   await page.getByRole("button", { name: "Mark all as unread" }).click();
   assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
 });
+
+test("Ask is a conversation: follow-ups carry earlier turns, and New conversation starts over", async (t) => {
+  const bodies = [];
+  const page = await open(t, "ask", { onApi(path, request) {
+    if (path === "/api/llm/status") return { json: { available: true, state: "ready" } };
+    if (path === "/api/ask") {
+      const body = request.postDataJSON();
+      bodies.push(body);
+      return { json: { available: true, can_answer: true, answer: `Answer ${bodies.length}` } };
+    }
+  } });
+  const input = page.getByRole("textbox");
+  await input.fill("What problems do I have?");
+  await input.press("Enter");
+  await page.getByRole("dialog").getByRole("button", { name: "Turn on the assistant" }).click();
+  await page.getByText("Answer 1").waitFor();
+  for (const [i, q] of ["Explain", "How do I close them?", "And the router?", "And the TV?"].entries()) {
+    await input.fill(q);
+    await input.press("Enter");
+    await page.getByText(`Answer ${i + 2}`).waitFor();
+  }
+  assert.deepEqual(bodies[0].history, []);
+  assert.deepEqual(bodies[1].history, [{ question: "What problems do I have?", answer: "Answer 1" }]);
+  // Only the last three exchanges travel with a question.
+  assert.deepEqual(bodies[4].history.map(turn => turn.question), ["Explain", "How do I close them?", "And the router?"]);
+  await page.getByRole("button", { name: "New conversation" }).click();
+  assert.equal(await page.locator(".bubble-user").count(), 0);
+  await input.fill("Fresh start");
+  await input.press("Enter");
+  await page.getByText("Answer 6").waitFor();
+  assert.deepEqual(bodies[5].history, []);
+});
+
+test("Explain for my device writes a prompt with the problem and the device into the chat without sending it", async (t) => {
+  const asked = [];
+  const page = await open(t, "devices/192.168.1.1", { scan: risky, onApi: (path) => {
+    if (path === "/api/ask") asked.push(path);
+    return explainReply(path);
+  } });
+  await page.getByText("Title HTTP_ADMIN_CLEARTEXT").waitFor();
+  await page.getByRole("link", { name: "Explain for my device" }).click();
+  const box = page.locator("#ask-question");
+  await box.waitFor();
+  const prompt = await box.inputValue();
+  assert.match(prompt, /"Title HTTP_ADMIN_CLEARTEXT" \(medium severity, code HTTP_ADMIN_CLEARTEXT\)/);
+  assert.match(prompt, /Device: Router by TP-Link, IP 192\.168\.1\.1, port tcp\/80\./);
+  assert.doesNotMatch(prompt, /img|onerror/);
+  assert.equal(await page.locator(".bubble-user").count(), 0);
+  assert.deepEqual(asked, []);
+});
+
+test("the Ask conversation survives other pages and a pending answer still arrives", async (t) => {
+  const bodies = [];
+  let release;
+  const older = { ...risky, id: "older", created_at: "2026-11-05T12:00:00Z" };
+  const page = await open(t, "ask", { scan: risky, onApi(path, request) {
+    if (path === "/api/history") return { json: [{ ...risky, device_count: 1, finding_count: 1 }, { ...older, device_count: 1, finding_count: 1 }] };
+    if (path === "/api/scans/older") return { json: older };
+    if (path === "/api/llm/status") return { json: { available: true, state: "ready" } };
+    if (path === "/api/ask") {
+      bodies.push(request.postDataJSON());
+      if (bodies.length === 2) return new Promise(resolve => { release = () => resolve({ json: { available: true, can_answer: true, answer: "Answer 2" } }); });
+      return { json: { available: true, can_answer: true, answer: `Answer ${bodies.length}` } };
+    }
+    return explainReply(path);
+  } });
+  const input = page.getByRole("textbox");
+  await input.fill("What problems do I have?");
+  await input.press("Enter");
+  await page.getByRole("dialog").getByRole("button", { name: "Turn on the assistant" }).click();
+  await page.getByText("Answer 1").waitFor();
+  // Ask a second question, leave before its answer arrives, then come back.
+  await input.fill("Explain");
+  await input.press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll(".bubble-user").length === 2);
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await page.locator(".score-number").waitFor();
+  release();
+  await page.getByRole("link", { name: "Ask", exact: true }).click();
+  await page.getByText("Answer 2").waitFor();
+  assert.deepEqual(await page.locator(".bubble-user").allInnerTexts(), ["What problems do I have?", "Explain"]);
+  // "Explain for my device" continues the same conversation, with the prompt waiting in the box.
+  await page.goto(origin + "/#/devices/192.168.1.1");
+  await page.getByText("Title HTTP_ADMIN_CLEARTEXT").waitFor();
+  await page.getByRole("link", { name: "Explain for my device" }).click();
+  const box = page.locator("#ask-question");
+  await page.waitForFunction(() => document.querySelector("#ask-question")?.value.includes("Explain this problem"));
+  assert.equal(await page.locator(".bubble-user").count(), 2);
+  assert.equal(new URL(page.url()).hash, "#/ask");
+  await box.press("Enter");
+  await page.getByText("Answer 3").waitFor();
+  assert.deepEqual(bodies[2].history.map(turn => turn.answer), ["Answer 1", "Answer 2"]);
+  // Opening another scan starts a new conversation.
+  await page.locator(".sidebar-recent").nth(1).click();
+  await page.waitForFunction(() => document.querySelectorAll(".bubble-user").length === 0);
+});
+
+test("an Ask link sends its question once, even after Back", async (t) => {
+  const asked = [];
+  const page = await open(t, "dashboard", { scan: risky, onApi(path, request) {
+    if (path === "/api/llm/status") return { json: { available: true, state: "ready" } };
+    if (path === "/api/ask") { asked.push(request.postDataJSON().question); return { json: { available: true, can_answer: true, answer: "Linked answer" } }; }
+    return explainReply(path);
+  } });
+  await page.evaluate(() => localStorage.setItem("ajar.ai", "yes"));
+  await page.reload();
+  await page.locator(".score-number").waitFor();
+  await page.evaluate(() => { window.location.hash = "#/ask?q=" + encodeURIComponent("Is my router safe?"); });
+  await page.getByText("Linked answer").waitFor();
+  assert.equal(new URL(page.url()).hash, "#/ask");
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await page.locator(".score-number").waitFor();
+  await page.goBack();
+  await page.getByText("Linked answer").waitFor();
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+  assert.deepEqual(asked, ["Is my router safe?"]);
+  assert.equal(await page.locator(".bubble-user").count(), 1);
+});

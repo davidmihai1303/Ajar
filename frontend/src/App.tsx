@@ -10,6 +10,7 @@ import { useMobilePoller } from "./lib/useMobilePoller";
 import { isDesktopApp } from "./lib/desktop";
 import { navigate, parseRoute, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
+import { ConversationProvider } from "./state/Conversation";
 import { InboxProvider } from "./state/Inbox";
 import AjarDock from "./components/AjarDock";
 import AjarToast from "./components/AjarToast";
@@ -93,7 +94,7 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-          page = <Ask key={`${scan?.id}-${route.query ?? ""}`} />;
+          page = <Ask key={`${scan?.id}-${route.query ?? ""}-${route.draft ?? ""}`} />;
           break;
         case "report":
           page = <Report />;
@@ -160,9 +161,11 @@ export default function App() {
   if (parseRoute(window.location.hash).name === "toast") return <ToastWindow />;
   return (
     <AppProvider>
-      <InboxProvider>
-        <Shell />
-      </InboxProvider>
+      <ConversationProvider>
+        <InboxProvider>
+          <Shell />
+        </InboxProvider>
+      </ConversationProvider>
     </AppProvider>
   );
 }

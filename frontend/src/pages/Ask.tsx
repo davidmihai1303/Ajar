@@ -1,44 +1,31 @@
 // Optional local Q&A grounded only in the current scan.
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
-import type { ModelStatus } from "../api/types";
+import type { ChatTurn, ModelStatus } from "../api/types";
 import { formatDate } from "../i18n";
 import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
+import { useConversation } from "../state/Conversation";
 import ErrorBanner from "../components/ErrorBanner";
 import { IconSend } from "../components/Icons";
 import PermissionDialog from "../components/PermissionDialog";
 
-interface Message {
-  question: string;
-  answer?: string;
-  muted?: boolean;
-  retry?: boolean;
-}
-
 const SUGGESTIONS = ["ask.s1", "ask.s2", "ask.s3"];
+/** Earlier exchanges sent with each question, so follow-ups ("how do I close them?") make sense. */
+const HISTORY_TURNS = 3;
 
 export default function Ask() {
   const { t, lang, scan, aiConsent, setAiConsent } = useApp();
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Kept outside this page, so moving to another page does not end the conversation.
+  const { messages, setMessages, sending, setSending, active } = useConversation();
   const [question, setQuestion] = useState("");
   const [error, setError] = useState(false);
-  const [sending, setSending] = useState<number | null>(null);
   const busy = sending !== null;
   const [askConsent, setAskConsent] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const hasEvidence = !!scan && scan.findings_available && scan.score !== null && !scan.error;
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [unloadFailed, setUnloadFailed] = useState(false);
-  const active = useRef<AbortController | null>(null);
-  useEffect(() => () => active.current?.abort(), []);
-  useEffect(() => {
-    if (aiConsent !== true && active.current) {
-      active.current.abort();
-      active.current = null;
-      setSending(null);
-    }
-  }, [aiConsent]);
 
   useEffect(() => {
     if (aiConsent !== true || !hasEvidence) return;
@@ -87,6 +74,11 @@ export default function Ask() {
     const controller = new AbortController();
     active.current = controller;
     const index = retryIndex ?? messages.length;
+    const history: ChatTurn[] = messages
+      .slice(0, index)
+      .filter((m) => m.answer && !m.retry)
+      .slice(-HISTORY_TURNS)
+      .map((m) => ({ question: m.question, answer: m.answer ?? "" }));
     if (retryIndex === undefined) {
       setQuestion("");
       setMessages(list => [...list, { question: trimmed }]);
@@ -100,7 +92,7 @@ export default function Ask() {
       }
     };
     try {
-      const answer = await api.ask(scan.id, trimmed, lang, controller.signal);
+      const answer = await api.ask(scan.id, trimmed, lang, controller.signal, history);
       if (controller.signal.aborted) return;
       let message = answer.answer ?? t(answer.available ? "ask.cannotAnswer" : "ask.off");
       if (!answer.available) {
@@ -120,6 +112,11 @@ export default function Ask() {
 
   const route = useRoute();
   const initialQueryHandled = useRef<string | null>(null);
+  // Once a ?q= or ?draft= link has been used, drop it from the address (no new history entry): the
+  // conversation outlives this page, so coming back or pressing Back must not send or fill it again.
+  const forgetLinkText = () => {
+    if (window.location.hash.startsWith("#/ask?")) window.history.replaceState(window.history.state, "", "#/ask");
+  };
 
   useEffect(() => {
     if (route.name === "ask" && route.query && initialQueryHandled.current !== route.query) {
@@ -129,6 +126,7 @@ export default function Ask() {
       // consent change within 50 ms) cancels the timer, and the next run must send it again.
       const timer = window.setTimeout(() => {
         initialQueryHandled.current = initialText;
+        forgetLinkText();
         if (aiConsent === true) {
           void send(initialText, true);
         } else {
@@ -141,6 +139,21 @@ export default function Ask() {
       };
     }
   }, [route, aiConsent]);
+
+  // "Explain for my device": the prepared prompt waits in the chat box until the user sends it.
+  const draftHandled = useRef<string | null>(null);
+  useEffect(() => {
+    if (route.name !== "ask" || !route.draft || draftHandled.current === route.draft) return;
+    draftHandled.current = route.draft;
+    setQuestion(route.draft);
+    forgetLinkText();
+    window.setTimeout(() => {
+      const box = document.getElementById("ask-question") as HTMLTextAreaElement | null;
+      if (!box || box.disabled) return;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }, 0);
+  }, [route]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -159,7 +172,14 @@ export default function Ask() {
       {aiConsent === true && status && !status.available && !status.state && <p className="muted">{t("ask.modelOffline")}</p>}
       {aiConsent === false && unloadFailed && <p role="status">{t("ask.unloadFailed")} <button type="button" onClick={() => void unload()}>{t("common.retry")}</button></p>}
       {aiConsent === true && (
-        <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
+        <div className="row">
+          <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
+          {messages.length > 0 && (
+            <button type="button" className="button self-start" disabled={busy} onClick={() => setMessages([])}>
+              {t("ask.newChat")}
+            </button>
+          )}
+        </div>
       )}
       {aiConsent === false && (
         <ErrorBanner
