@@ -1,0 +1,16 @@
+# Template: install_autoscan.sh replaces @USER@ and @REPO@. One scheduled full scan through the app API.
+[Unit]
+Description=Ajar scheduled network scan (only on a network with saved consent)
+After=network-online.target netcheck-agent.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/deploy/pi/ajar_autoscan.py run
+# A full scan takes a few minutes; the agent itself stops a scan after ~11 minutes.
+TimeoutStartSec=20min
+# This unit never needs privileges: the root step happens in netcheck-nmap, started by the agent.
+NoNewPrivileges=true
+PrivateTmp=true

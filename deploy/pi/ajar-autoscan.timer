@@ -1,0 +1,13 @@
+# Full scan 15 minutes after boot, then every 3 hours. For a demo, override with:
+#   sudo systemctl edit ajar-autoscan.timer   ->   [Timer] / OnUnitActiveSec= / OnUnitActiveSec=10min
+[Unit]
+Description=Run the Ajar scheduled scan every 3 hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=3h
+AccuracySec=1min
+Unit=ajar-autoscan.service
+
+[Install]
+WantedBy=timers.target
