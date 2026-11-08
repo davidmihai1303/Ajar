@@ -112,6 +112,9 @@ class EventsHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        # http.server speaks HTTP/1.0 and closes after each response; say so explicitly, otherwise
+        # clients such as OkHttp may try to reuse the closed socket for the next long-poll.
+        self.send_header("Connection", "close")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
         self.end_headers()
