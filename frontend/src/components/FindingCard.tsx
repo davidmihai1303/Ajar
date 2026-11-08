@@ -1,6 +1,6 @@
 // One finding: plain title, ≤2-sentence explanation, ordered fix steps; technical evidence collapsed.
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Device, Explanation, Finding } from "../api/types";
 import { referencesFor } from "../lib/references";
@@ -8,7 +8,8 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import AskAiButton from "./AskAiButton";
-import { DeviceIcon, IconRefresh } from "./Icons";
+import { useDeviceName } from "./DeviceCard";
+import { DeviceIcon, IconAsk, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
 export default function FindingCard({
@@ -24,21 +25,10 @@ export default function FindingCard({
   showDevice?: boolean;
   onRescan?: () => void;
 }) {
-  const { t, lang, scan, aiConsent } = useApp();
+  const { t, lang, scan } = useApp();
   const isMobile = useIsMobile();
+  const typeName = useDeviceName();
   const [text, setText] = useState<Explanation | null>(null);
-  const [rephrased, setRephrased] = useState<string | null>(null);
-  const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off">("idle");
-  const active = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    setRephrased(null);
-    setRephraseState("idle");
-    return () => {
-      active.current?.abort();
-      active.current = null;
-    };
-  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, finding.protocol, lang]);
 
   useEffect(() => {
     let alive = true;
@@ -52,31 +42,23 @@ export default function FindingCard({
     };
   }, [finding, scan?.id, lang]);
 
-  const rephrase = async () => {
-    if (!scan || aiConsent !== true) {
-      setRephraseState("off");
-      return;
-    }
-    if (active.current) return;
-    const controller = new AbortController();
-    active.current = controller;
-    setRephraseState("loading");
-    try {
-      const answer = await api.personalize(scan.id, finding, lang, controller.signal);
-      if (controller.signal.aborted) return;
-      setRephrased(answer.explanation);
-      setRephraseState("idle");
-    } catch {
-      if (!controller.signal.aborted) setRephraseState("off");
-    } finally {
-      if (active.current === controller) active.current = null;
-    }
-  };
-
   const askPrompt = t("finding.rephraseQuestion", {
     code: finding.code,
     device: deviceName ?? finding.ip,
     ip: finding.ip,
+  });
+
+  // A short prompt with the problem and the device, written into the chat box (not sent).
+  // Only catalog facts and the vendor: no hostname, banner or page title (untrusted text).
+  const target = device ?? scan?.devices.find((item) => item.ip === finding.ip);
+  const explainPrompt = t("finding.explainPrompt", {
+    problem: text?.title ?? finding.code,
+    severity: t(`severity.${finding.severity}`).toLowerCase(),
+    code: finding.code,
+    device: target ? typeName(target.device_type) : t("device.unknownTitle"),
+    vendor: target?.vendor ? t("finding.explainVendor", { vendor: target.vendor }) : "",
+    ip: finding.ip,
+    port: finding.port === null ? "" : t("finding.explainPort", { protocol: finding.protocol ?? "", port: finding.port }),
   });
 
   return (
@@ -102,7 +84,7 @@ export default function FindingCard({
         <span className="muted">{t("finding.points", { points: finding.points })}</span>
       </div>
       <h3 className="finding-title">{text?.title ?? t("finding.loading")}</h3>
-      <p className="finding-text">{rephrased ?? text?.explanation ?? ""}</p>
+      <p className="finding-text">{text?.explanation ?? ""}</p>
       {text && text.steps.length > 0 && (
         <ol className="steps">
           {text.steps.map((step) => (
@@ -120,12 +102,12 @@ export default function FindingCard({
             </button>
           )}
           {!isMobile && (
-            <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
-              {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
-            </button>
+            <a className="button" href={href({ name: "ask", draft: explainPrompt })}>
+              <IconAsk />
+              {t("finding.rephrase")}
+            </a>
           )}
         </div>
-        {!isMobile && rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
         <details className="tech">
           <summary>{t("common.technical")}</summary>
           <p className="mono">
