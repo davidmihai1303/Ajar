@@ -7,7 +7,8 @@ import { referencesFor } from "../lib/references";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
-import { DeviceIcon, IconAsk, IconRefresh } from "./Icons";
+import AskAiButton from "./AskAiButton";
+import { DeviceIcon, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
 export default function FindingCard({
@@ -111,14 +112,7 @@ export default function FindingCard({
       )}
       <div className="finding-footer">
         <div className="row wrap gap-m">
-          <a
-            className="button"
-            href={href({ name: "ask", query: askPrompt })}
-            title={t("dashboard.askAi")}
-          >
-            <IconAsk />
-            {t("dashboard.askAi")}
-          </a>
+          <AskAiButton question={askPrompt} />
           {onRescan && (
             <button type="button" className="button" onClick={onRescan} title={t("dashboard.rescanNote")}>
               <IconRefresh />

@@ -6,8 +6,10 @@
 .ajar .door-swing,
 .ajar .door-sway { transform-box: view-box; transform-origin: 98px 125px; }
 .ajar .door-swing { transition: transform 0.6s cubic-bezier(0.34, 1.4, 0.64, 1); }
-.ajar[data-state="ajar"] .door-swing { transform: scaleX(0.62) skewY(-3deg); }
-.ajar[data-state="wide"] .door-swing { transform: scaleX(-0.55) skewY(4deg); }
+/* The door turns on its hinge only (no skew), so its edges stay level with the frame and it never
+   looks like it is hanging off. The hinge (x = 98) is the frame's inner left edge. */
+.ajar[data-state="ajar"] .door-swing { transform: scaleX(0.62); }
+.ajar[data-state="wide"] .door-swing { transform: scaleX(-0.55); }
 .ajar[data-state="wide"] .door-sway { animation: ajar-sway 1.8s ease-in-out infinite; }
 @keyframes ajar-sway { 50% { transform: scaleX(0.88); } }
 

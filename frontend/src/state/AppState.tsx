@@ -207,7 +207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (Notification.permission === "granted") {
           new Notification("Ajar", {
             body: t("mobile.notifyActiveBody"),
-            icon: "/favicon.ico",
+            icon: "/ajar-192.png",
           });
         }
       }
@@ -351,7 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const medium = result.findings.filter((f) => f.severity === "medium").length;
             new Notification(t("desktop.scanCompleted", { score: result.score ?? "—" }), {
               body: t("desktop.scanCompletedBody", { high, medium }),
-              icon: "/favicon.ico",
+              icon: "/ajar-192.png",
             });
           } catch {
             /* ignore */

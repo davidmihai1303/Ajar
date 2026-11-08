@@ -1,7 +1,7 @@
 // Layout + simple navigation between pages. First screen = Welcome until a scan exists,
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { switchDemo } from "./api/client";
 import LanguageToggle from "./components/LanguageToggle";
 import MobileHeader from "./components/MobileHeader";
@@ -10,7 +10,7 @@ import { useMobilePoller } from "./lib/useMobilePoller";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
-import DesktopDialog from "./components/DesktopDialog";
+import AjarWidget from "./components/AjarWidget";
 import ErrorBanner from "./components/ErrorBanner";
 import PermissionDialog from "./components/PermissionDialog";
 import Sidebar, { SidebarShowButton } from "./components/Sidebar";
@@ -30,7 +30,6 @@ function Shell() {
   const route = useRoute();
   const isMobile = useIsMobile();
   useMobilePoller(isMobile);
-  const [showDesktopDialog, setShowDesktopDialog] = useState(false);
 
   useEffect(() => {
     if (ready && scan && route.name === "home") navigate({ name: "dashboard" });
@@ -49,6 +48,13 @@ function Shell() {
         <button className="button" onClick={() => switchDemo(true)}>{t("common.openDemo")}</button>
       </div>
     </main>;
+  } else if (route.name === "widget") {
+    // The installed app's widget shortcut: Ajar and the basic numbers, nothing else.
+    content = (
+      <main className="widget-page" id="main">
+        <AjarWidget standalone />
+      </main>
+    );
   } else if (scanning) {
     content = <ScanProgress />;
   } else if (!scan && (route.name === "home" || route.name === "dashboard")) {
@@ -114,17 +120,14 @@ function Shell() {
 
   return (
     <>
-      {demo && ready && (
+      {demo && ready && route.name !== "widget" && (
         <div className="demo-banner">
           <ErrorBanner tone="info" action={<button className="link-button" onClick={() => switchDemo(false)}>{t("common.exitDemo")}</button>}>{t("common.demo")}</ErrorBanner>
         </div>
       )}
       {content}
-      {!isMobile && !app.loadFailed && <AjarDock />}
+      {!isMobile && !app.loadFailed && route.name !== "widget" && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
-      {showDesktopDialog && (
-        <DesktopDialog onClose={() => setShowDesktopDialog(false)} />
-      )}
     </>
   );
 }

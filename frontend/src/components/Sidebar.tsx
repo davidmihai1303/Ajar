@@ -1,7 +1,6 @@
 // Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and stays put when the
 // sidebar hides), then "new scan", navigation, recent scans, language and the hide button.
 import { formatDate } from "../i18n";
-import { downloadAjarLinux } from "../lib/downloadWrapper";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href, type Route } from "../router";
 import { useApp } from "../state/AppState";
@@ -10,7 +9,6 @@ import {
   IconBell,
   IconDashboard,
   IconDevices,
-  IconDownload,
   IconHistory,
   IconPlus,
   IconSidebar,
@@ -52,17 +50,6 @@ export default function Sidebar({
           </a>
         ))}
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
-          <button
-            type="button"
-            className="sidebar-item"
-            onClick={downloadAjarLinux}
-            style={{ width: "100%", background: "transparent", border: 0, textAlign: "left", cursor: "pointer" }}
-            title={t("desktop.downloadTitle")}
-          >
-            <IconDownload />
-            {t("desktop.download")}
-          </button>
-
           <button
             type="button"
             className={`sidebar-item${notificationsEnabled ? " active" : ""}`}

@@ -4,14 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff, Severity } from "../api/types";
 import { formatDate } from "../i18n";
-import { downloadAjarLinux } from "../lib/downloadWrapper";
 import { bySeverity, fixFirst, isUnknownDevice, previousComparable, severityCounts } from "../lib/scan";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
 import FindingCard from "../components/FindingCard";
-import { DeviceIcon, IconAsk, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
+import AjarWidget from "../components/AjarWidget";
+import AskAiButton from "../components/AskAiButton";
+import { DeviceIcon, IconBell, IconChevron, IconRefresh } from "../components/Icons";
 import ScoreBadge, { SEVERITY_ICON, SeverityBadge } from "../components/ScoreBadge";
 
 const readOpen = () => {
@@ -118,8 +119,10 @@ export default function Dashboard() {
         </button>
       )}
 
+      {isMobile && <AjarWidget />}
+
       <section className="row spread end">
-        <div className="stack">
+        <div className="stack" style={isMobile ? { display: "none" } : undefined}>
           <ScoreBadge scan={scan} />
           <span className="muted">
             {t("dashboard.context", {
@@ -159,21 +162,13 @@ export default function Dashboard() {
               </p>
             )}
             <div className="row wrap gap-m">
-              <a
-                className="button"
-                href={href({
-                  name: "ask",
-                  query: t("finding.rephraseQuestion", {
-                    code: finding.code,
-                    device: deviceName(first.device.device_type),
-                    ip: first.device.ip,
-                  }),
+              <AskAiButton
+                question={t("finding.rephraseQuestion", {
+                  code: finding.code,
+                  device: deviceName(first.device.device_type),
+                  ip: first.device.ip,
                 })}
-                title={t("dashboard.askAi")}
-              >
-                <IconAsk />
-                {t("dashboard.askAi")}
-              </a>
+              />
               <button
                 type="button"
                 className="button"
@@ -222,7 +217,7 @@ export default function Dashboard() {
           >
             {t("dashboard.filterAll", { count: allFindings.length })}
           </button>
-          {(["high", "medium", "low"] as const).map((severity) => {
+          {(["high", "medium", "low", "info"] as const).map((severity) => {
             const isSelected = selectedSeverity === severity;
             return (
               <button
@@ -237,7 +232,7 @@ export default function Dashboard() {
                   padding: "6px 16px",
                   borderWidth: isSelected ? 2 : 1,
                   boxShadow: isSelected
-                    ? `0 0 0 2px var(--${severity === "high" ? "red" : severity === "medium" ? "amber" : "blue"})`
+                    ? `0 0 0 2px var(--${({ high: "red", medium: "amber", low: "blue", info: "grey" } as const)[severity]})`
                     : undefined,
                   fontWeight: isSelected ? 700 : 500,
                   transition: "all 0.15s ease",

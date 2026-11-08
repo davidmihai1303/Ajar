@@ -69,6 +69,11 @@ const laptop: Device = {
   device_type: "laptop",
   ports: [],
 };
+// The same laptop with remote login turned on (an Info finding, 0 points) in the two latest scans.
+const laptopSsh: Device = {
+  ...laptop,
+  ports: [{ port: 22, protocol: "tcp", service: "ssh", product: "OpenSSH", version: "9.6", http_title: null, tunnel: null }],
+};
 const oldServer: Device = {
   ip: "172.20.10.3",
   mac_masked: "00:1B:21:xx:xx:xx",
@@ -98,6 +103,7 @@ const cameraFindings = [
   f("CAMERA_STREAM_EXPOSED", "high", 20, "172.20.10.5", 554, "tcp", "rtsp · Hikvision 7513 rtspd"),
   f("HTTP_ADMIN_CLEARTEXT", "medium", 10, "172.20.10.5", 80, "tcp", 'http · title "Web Login" · no ssl'),
 ];
+const sshFinding = f("SSH_OPEN", "info", 0, "172.20.10.2", 22, "tcp", "ssh · OpenSSH 9.6");
 const telnetFinding = f("TELNET_OPEN", "high", 20, "172.20.10.3", 23, "tcp", "telnet · BusyBox telnetd");
 
 const score = (findings: Finding[]) => Math.max(0, 100 - findings.reduce((sum, item) => sum + item.points, 0));
@@ -118,8 +124,8 @@ const build = (id: string, created_at: string, source: Scan["source"], file: str
 });
 
 export const demoScans: Scan[] = [
-  build("demo-4", "2026-11-07T14:32:00", "live", "scan_2026-11-07_1432.xml", [router, laptop, camera, hub, tv, unknown], [...routerFindings, ...cameraFindings, hubFinding, unknownFinding]),
-  build("demo-3", "2026-11-06T18:05:00", "live", "scan_2026-11-06_1805.xml", [router, laptop, hub, tv, unknown], [...routerFindings, hubFinding, unknownFinding]),
+  build("demo-4", "2026-11-07T14:32:00", "live", "scan_2026-11-07_1432.xml", [router, laptopSsh, camera, hub, tv, unknown], [...routerFindings, sshFinding, ...cameraFindings, hubFinding, unknownFinding]),
+  build("demo-3", "2026-11-06T18:05:00", "live", "scan_2026-11-06_1805.xml", [router, laptopSsh, hub, tv, unknown], [...routerFindings, sshFinding, hubFinding, unknownFinding]),
   build("demo-2", "2026-11-04T11:20:00", "import", "lab_after.xml", [{ ...router, ports: router.ports.filter((p) => p.port === 53) }, laptop, { ...oldServer, ports: [] }], []),
   build("demo-1", "2026-11-03T10:02:00", "import", "lab_before.xml", [router, laptop, oldServer], [...routerFindings, telnetFinding]),
 ];
@@ -225,6 +231,18 @@ const TEXTS: Record<string, Record<Lang, Text>> = {
       title: "A device I don't recognise",
       explanation: "It has no known maker and no name, but it has an open door. Check that it's yours.",
       steps: ["Look at the router's list of connected devices.", "If you don't recognise it, change your Wi-Fi password."],
+    },
+  },
+  SSH_OPEN: {
+    ro: {
+      title: "Conectarea criptată la distanță este accesibilă",
+      explanation: "Dispozitivul oferă SSH pentru conectare criptată la distanță. Acest lucru poate fi normal dacă îl administrezi astfel.",
+      steps: ["Verifică dacă folosești accesul la distanță.", "Oprește SSH dacă nu îl folosești sau permite accesul doar persoanelor care administrează dispozitivul."],
+    },
+    en: {
+      title: "Encrypted remote login is reachable",
+      explanation: "This device offers SSH for encrypted remote login. This can be expected if you administer it remotely.",
+      steps: ["Check whether you use remote login.", "Turn off SSH if unused, or restrict access to the people who administer the device."],
     },
   },
   TELNET_OPEN: {

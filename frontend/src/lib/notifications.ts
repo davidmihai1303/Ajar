@@ -31,7 +31,7 @@ export function sendDesktopNotification(
   }
   try {
     new Notification(title, {
-      icon: "/favicon.ico",
+      icon: "/ajar-192.png",
       ...options,
     });
     if (withAudio) {

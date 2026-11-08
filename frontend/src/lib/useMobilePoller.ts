@@ -41,7 +41,7 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
               const score = latest.score ?? "—";
               new Notification(t("desktop.scanCompleted", { score }), {
                 body: t("mobile.notifySubtitle"),
-                icon: "/favicon.ico",
+                icon: "/ajar-192.png",
               });
             } catch {
               /* ignore mobile Notification constructor restriction */

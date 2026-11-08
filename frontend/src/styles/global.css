@@ -128,8 +128,12 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .sidebar-heading { padding: 0 12px 4px; }
 .sidebar-recent { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 8px; color: var(--text); text-decoration: none; }
 .sidebar-recent.active { background: var(--hover); }
-.sidebar-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px;  flex-wrap: wrap; }
-.sidebar-toggle { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--muted); font: 500 16px var(--sans); min-height: 44px; padding: 0 10px; border-radius: 10px; cursor: pointer; }
+.sidebar-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; }
+.sidebar-footer .segmented { flex: none; }
+.sidebar-footer .segmented button { padding: 8px 10px; }
+/* Always on the right of the language switch; a long label wraps onto two lines instead of moving below. */
+.sidebar-footer .sidebar-toggle { padding: 0 6px; gap: 6px; white-space: normal; text-align: left; line-height: 1.2; }
+.sidebar-toggle { margin-left: auto; min-width: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--muted); font: 500 16px var(--sans); min-height: 44px; padding: 0 10px; border-radius: 10px; cursor: pointer; }
 .sidebar-toggle:hover { background: var(--hover); color: var(--text); }
 .sidebar-show { position: fixed; left: var(--ajar-x); top: 262px; z-index: 25; width: var(--ajar-w); display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: 500 16px var(--sans); cursor: pointer; }
 .sidebar-show:hover { background: var(--sidebar); }
@@ -309,7 +313,8 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .diff-mark.bad { color: var(--red); }
 
 /* Sidebar body scrolls under a fixed Ajar area, so nothing slides beneath Ajar */
-.sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin: 0 -14px; padding: 0 14px 8px; }
+.sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin: 0 -14px; padding: 0 14px 8px; scrollbar-width: none; }
+.sidebar-scroll::-webkit-scrollbar { display: none; }
 
 /* Smaller screens */
 @media (max-width: 1000px) {
@@ -356,6 +361,23 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
   top: 0;
   z-index: 30;
 }
+
+.mobile-brand { display: flex; flex-direction: column; gap: 0; text-decoration: none; min-width: 0; }
+.mobile-logo { display: block; height: 48px; width: auto; }
+.mobile-network { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Phone widget: Ajar on the left, a few numbers on the right (dashboard top and #/widget). */
+.ajar-widget { display: flex; align-items: center; gap: 16px; padding: 14px 18px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); text-decoration: none; box-shadow: 0 6px 20px rgba(42, 36, 32, 0.08); }
+.ajar-widget:hover { color: var(--text); }
+.ajar-widget-mascot { flex: none; width: 96px; }
+.ajar-widget-stats { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.ajar-widget-score { display: flex; align-items: baseline; gap: 6px; }
+.ajar-widget-number { font-size: 48px; line-height: 1; }
+.ajar-widget-level { font-size: 14px; padding: 2px 10px; }
+.ajar-widget-counts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 14px; font-weight: 600; }
+.ajar-widget-meta { font-size: 13px; }
+.widget-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--canvas); }
+.ajar-widget.standalone { width: 100%; max-width: 420px; }
 
 .mobile-notify-card {
   border: 1.5px solid var(--oak);
