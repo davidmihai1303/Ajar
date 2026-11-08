@@ -407,3 +407,50 @@ def test_free_answer_is_shown_without_markdown(monkeypatch):
     answer = ask(fake_llm(reply, seen=seen), "Is my printer ok?", EVIDENCE, "en")
     assert answer.text == "Your HP printer (192.168.1.10) accepts raw print jobs:\n• Turn off port 9100."
     assert "no Markdown" in seen[0]["messages"][0]["content"]
+
+
+# --------------------------------------------------------------------------- conversation (turn-based Ask)
+
+def test_follow_up_sends_earlier_turns_in_order(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    history = [("Ce probleme am?", "Imprimanta are portul 9100 deschis."), ("explică", "Oricine poate tipări.")]
+    answer = ask(fake_llm("Deschide setările imprimantei și oprește portul 9100.", seen=seen),
+                 "cum le închid?", EVIDENCE, "ro", history)
+    assert answer.source == "llm_free"
+    roles = [m["role"] for m in seen[0]["messages"]]
+    assert roles == ["system", "user", "assistant", "user", "assistant", "user"]
+    assert seen[0]["messages"][1]["content"] == "Ce probleme am?"
+    assert seen[0]["messages"][4]["content"] == "Oricine poate tipări."
+    final = json.loads(seen[0]["messages"][-1]["content"])
+    assert final["question"] == "cum le închid?" and "[192.168.1.10:9100]" in " ".join(final["scan_facts"])
+    assert "ongoing conversation" in seen[0]["messages"][0]["content"]
+
+
+def test_history_is_trimmed_masked_and_cleaned(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    mac = "02:00:00:00:00:01"
+    history = [(f"q{i}", f"a{i}") for i in range(6)] + [("Is " + mac + " ok?", "**Yes**, the `printer` is fine.")]
+    ask(fake_llm("ok", seen=seen), "and now?", EVIDENCE, "en", history)
+    messages = seen[0]["messages"]
+    assert len(messages) == 2 + 2 * llm.MAX_HISTORY_TURNS
+    text = json.dumps(messages)
+    assert mac not in text and "[MAC]" in text and "**" not in text and "`" not in text
+    assert "q3" not in text and "q4" in text
+
+
+def test_long_history_drops_oldest_turns_first(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    history = [("first", "x" * 900), ("second", "y" * 900), ("third", "z" * 900)]
+    ask(fake_llm("ok", seen=seen), "more?", EVIDENCE, "en", history)
+    text = json.dumps(seen[0]["messages"])
+    assert "first" not in text and "second" in text and "third" in text
+    assert sum(len(m["content"]) for m in seen[0]["messages"][1:-1]) <= llm.MAX_HISTORY_CHARS
+
+
+def test_record_mode_ignores_history():
+    seen = []
+    ask(fake_llm(select("f0"), seen=seen), "Is port 9100 safe?", EVIDENCE, "en", [("hi", "hello")])
+    assert [m["role"] for m in seen[0]["messages"]] == ["system", "user"]
