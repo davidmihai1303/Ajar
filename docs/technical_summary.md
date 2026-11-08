@@ -4,8 +4,8 @@
 
 ## Lab setup
 
-One iPhone hotspot (`RSH-Byte_me`, WPA2, `172.20.10.0/28`). The scanner is an MSI laptop running Ubuntu and
-nmap 7.98, with no other network connected. The target is a Mac with Docker Desktop (setups A + B + C):
+One iPhone hotspot (`RSH-Byte_me`, `172.20.10.0/28`). The scanner is an MSI laptop running Ubuntu and
+nmap 7.98, joined only to the hotspot. The target is a Mac with Docker Desktop (setups A + B + C):
 Redis, Mosquitto 1.6, nginx serving "Router Admin Login", fake Telnet / vsftpd 2.3.4 banners
 (`lab/fake_services.py`, no real shell behind them), plus the Mac's own Screen Sharing, File Sharing,
 Remote Login and AirPlay. Before/after: `scan_01.xml` scores **0**. After switching those services off,
@@ -31,7 +31,7 @@ sudo netcheck-nmap <cidr>  (only root) │          ├─ analysis/  parser →
   network of at most /24 inside the single detected subnet. Live scans need `--confirm`. Two
   connected networks (hotspot + venue) means refusal, never a guess.
 - **Security.** `defusedxml` with a size limit, MACs masked in every output, banners and titles
-  rendered only as escaped text, configuration only through environment variables, gitleaks clean,
+  rendered only as escaped text, configuration only through environment variables (checked live with gitleaks),
   and a one-click "Delete my history".
 
 ## Assumptions (where the brief is silent)
