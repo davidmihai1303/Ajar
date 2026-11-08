@@ -8,7 +8,7 @@ import { useApp } from "../state/AppState";
  * Triggers mobile notifications, haptic vibration and audio alerts when threats are found.
  */
 export function useMobilePoller(enabled = true, intervalMs = 8000) {
-  const { scan, selectScan, t, notificationsEnabled } = useApp();
+  const { scan, selectScan, refreshHistory, t, notificationsEnabled } = useApp();
   const lastScanIdRef = useRef<string | null>(scan?.id ?? null);
 
   useEffect(() => {
@@ -30,7 +30,8 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
         const latest = history[0];
         if (latest && latest.id && latest.id !== lastScanIdRef.current) {
           lastScanIdRef.current = latest.id;
-          // New scan detected on server!
+          // New scan detected on server: refresh the history (inbox, recents) and show it.
+          await refreshHistory().catch(() => undefined);
           await selectScan(latest.id);
 
           if (!notificationsEnabled) return;
@@ -69,5 +70,5 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
     return () => {
       if (timer) window.clearInterval(timer);
     };
-  }, [enabled, intervalMs, notificationsEnabled, selectScan, t]);
+  }, [enabled, intervalMs, notificationsEnabled, refreshHistory, selectScan, t]);
 }

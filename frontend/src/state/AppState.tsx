@@ -46,6 +46,7 @@ interface AppState {
   history: HistoryItem[];
   scan: Scan | null;
   selectScan: (id: string) => Promise<void>;
+  refreshHistory: () => Promise<HistoryItem[]>;
   scanning: boolean;
   scanProblem: ScanProblem | null;
   flow: FlowStep | null;
@@ -204,6 +205,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (typeof Notification !== "undefined") {
         store.set("ajar.browserPerm", Notification.permission);
+        // Refused in the browser: do not show notifications as active.
+        if (Notification.permission === "denied") {
+          setNotificationsEnabledState(false);
+          store.set("ajar.notifications", "no");
+        }
         if (Notification.permission === "granted") {
           new Notification("Ajar", {
             body: t("mobile.notifyActiveBody"),
@@ -451,6 +457,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     history,
     scan,
     selectScan,
+    refreshHistory: loadHistory,
     scanning,
     scanProblem,
     flow,

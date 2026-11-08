@@ -123,10 +123,12 @@ export default function Ask() {
 
   useEffect(() => {
     if (route.name === "ask" && route.query && initialQueryHandled.current !== route.query) {
-      initialQueryHandled.current = route.query;
       const initialText = route.query;
       setQuestion(initialText);
+      // Marked as handled only when it is actually sent: an effect cleanup (React StrictMode, or a
+      // consent change within 50 ms) cancels the timer, and the next run must send it again.
       const timer = window.setTimeout(() => {
+        initialQueryHandled.current = initialText;
         if (aiConsent === true) {
           void send(initialText, true);
         } else {
