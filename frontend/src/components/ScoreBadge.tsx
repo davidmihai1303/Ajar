@@ -30,7 +30,7 @@ export default function ScoreBadge({ score, size = "large" }: { score: number | 
   );
 }
 
-const SEVERITY_ICON: Record<Severity, string> = { high: "▲", medium: "●", low: "◆", info: "i" };
+export const SEVERITY_ICON: Record<Severity, string> = { high: "▲", medium: "●", low: "◆", info: "i" };
 
 export function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
   const { t } = useApp();

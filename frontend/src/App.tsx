@@ -10,7 +10,6 @@ import { AppProvider, useApp } from "./state/AppState";
 import AjarDock from "./components/AjarDock";
 import DesktopDialog from "./components/DesktopDialog";
 import ErrorBanner from "./components/ErrorBanner";
-import MiniWidget from "./components/MiniWidget";
 import PermissionDialog from "./components/PermissionDialog";
 import Sidebar, { SidebarShowButton } from "./components/Sidebar";
 import Ask from "./pages/Ask";
@@ -28,7 +27,6 @@ function Shell() {
   const route = useRoute();
   const isMobile = useIsMobile();
   useMobilePoller(isMobile);
-  const [showWidget, setShowWidget] = useState(false);
   const [showDesktopDialog, setShowDesktopDialog] = useState(false);
 
   useEffect(() => {
@@ -71,7 +69,7 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-            page = <Ask key={scan?.id} />;
+          page = <Ask key={`${scan?.id}-${route.query ?? ""}`} />;
           break;
         default:
           page = <Dashboard />;
@@ -89,11 +87,7 @@ function Shell() {
     } else {
       content = (
         <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
-          <Sidebar
-            current={route.name}
-            onOpenWidget={() => setShowWidget((prev) => !prev)}
-            onOpenDesktopDialog={() => setShowDesktopDialog(true)}
-          />
+          <Sidebar current={route.name} />
           <SidebarShowButton />
           <main className="main" id="main">
             {page}
@@ -113,17 +107,8 @@ function Shell() {
       {content}
       {!isMobile && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
-      {showWidget && (
-        <MiniWidget
-          onClose={() => setShowWidget(false)}
-          onDownloadWrapper={() => setShowDesktopDialog(true)}
-        />
-      )}
       {showDesktopDialog && (
-        <DesktopDialog
-          onClose={() => setShowDesktopDialog(false)}
-          onOpenWidget={() => setShowWidget(true)}
-        />
+        <DesktopDialog onClose={() => setShowDesktopDialog(false)} />
       )}
     </>
   );

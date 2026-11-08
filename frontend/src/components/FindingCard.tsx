@@ -6,7 +6,7 @@ import type { Device, Explanation, Finding } from "../api/proposedTypes";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
-import { DeviceIcon, IconRefresh } from "./Icons";
+import { DeviceIcon, IconAsk, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
 export default function FindingCard({
@@ -75,18 +75,26 @@ export default function FindingCard({
     }
   };
 
+  const askPrompt = t("finding.rephraseQuestion", {
+    code: finding.code,
+    device: deviceName,
+    ip: finding.ip,
+  });
+
   return (
     <article className={`card finding${finding.severity === "high" ? " finding-high" : ""}`}>
-      {showDevice && device && (
-        <div className="row spread" style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--line)" }}>
-          <div className="row">
-            <DeviceIcon type={device.device_type} size={18} />
-            <a href={href({ name: "device", ip: device.ip })} className="strong">
-              {device.hostname || device.ip}
+      {showDevice && (
+        <div className="row spread center" style={{ marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid var(--line)", flexWrap: "wrap", gap: 8 }}>
+          <div className="row center" style={{ gap: 8, flexWrap: "wrap" }}>
+            <DeviceIcon type={device?.device_type ?? "unknown"} size={18} />
+            <a href={href({ name: "device", ip: finding.ip })} className="strong" style={{ color: "var(--walnut)", textDecoration: "none" }}>
+              {deviceName}
             </a>
-            {device.hostname && <span className="muted mono">({device.ip})</span>}
+            <span className="muted mono" style={{ fontSize: 13 }}>IP {finding.ip}</span>
+            {device?.hostname && <span className="muted" style={{ fontSize: 13 }}>({device.hostname})</span>}
+            {device?.vendor && <span className="muted" style={{ fontSize: 13 }}>• {device.vendor}</span>}
           </div>
-          <a href={href({ name: "device", ip: device.ip })} className="muted" style={{ fontSize: 14 }}>
+          <a href={href({ name: "device", ip: finding.ip })} className="link-button muted" style={{ fontSize: 13, minHeight: "auto", padding: "4px 8px" }}>
             {t("dashboard.viewDevice")} →
           </a>
         </div>
@@ -106,6 +114,14 @@ export default function FindingCard({
       )}
       <div className="finding-footer">
         <div className="row wrap gap-m">
+          <a
+            className="button"
+            href={href({ name: "ask", query: askPrompt })}
+            title={t("dashboard.askAi")}
+          >
+            <IconAsk />
+            {t("dashboard.askAi")}
+          </a>
           {onRescan && (
             <button type="button" className="button" onClick={onRescan} title={t("dashboard.rescanNote")}>
               <IconRefresh />

@@ -62,7 +62,7 @@ export default function Ask() {
     setBusy(true);
     try {
       const answer = await api.ask(scan.id, trimmed, lang, controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted && aiConsent !== true) return;
       if (!answer.available) {
         setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
       } else if (!answer.can_answer || !answer.answer) {
@@ -71,7 +71,7 @@ export default function Ask() {
         setMessages((list) => [...list, { from: "ajar", text: answer.answer as string }]);
       }
     } catch {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted && aiConsent !== true) return;
       setMessages((list) => [...list, { from: "ajar", text: t("ask.off"), muted: true }]);
     } finally {
       if (active.current === controller) {
@@ -89,12 +89,17 @@ export default function Ask() {
       initialQueryHandled.current = route.query;
       const initialText = route.query;
       setQuestion(initialText);
-      if (aiConsent === true) {
-        void send(initialText, true);
-      } else {
-        setPending(initialText);
-        setAskConsent(true);
-      }
+      const timer = window.setTimeout(() => {
+        if (aiConsent === true) {
+          void send(initialText, true);
+        } else {
+          setPending(initialText);
+          setAskConsent(true);
+        }
+      }, 50);
+      return () => {
+        window.clearTimeout(timer);
+      };
     }
   }, [route, aiConsent]);
 
@@ -193,9 +198,11 @@ export default function Ask() {
             setAskConsent(false);
             setAiConsent(true);
             if (pending) {
-              // Consent is saved; send the question that was waiting for it.
-              void send(pending, true);
+              const toSend = pending;
               setPending(null);
+              window.setTimeout(() => {
+                void send(toSend, true);
+              }, 50);
             }
           }}
         />

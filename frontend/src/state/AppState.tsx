@@ -212,6 +212,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await loadHistory().catch(() => undefined);
       navigate({ name: "dashboard" });
       void notifyChanges(previousId, result);
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const high = result.findings.filter((f) => f.severity === "high").length;
+        const medium = result.findings.filter((f) => f.severity === "medium").length;
+        new Notification(t("desktop.scanCompleted", { score: result.score ?? "—" }), {
+          body: t("desktop.scanCompletedBody", { high, medium }),
+          icon: "/favicon.ico",
+        });
+      }
       if (typeof Notification !== "undefined" && Notification.permission === "default" && !store.get("ajar.ack.notify")) {
         setFlow("notify");
       }

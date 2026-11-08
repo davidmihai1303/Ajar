@@ -4,15 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Explanation, ScanDiff, Severity } from "../api/proposedTypes";
 import { formatDate } from "../i18n";
-import { downloadDesktopWrapper } from "../lib/downloadWrapper";
-import { bySeverity, fixFirst, scoreLevel, severityCounts } from "../lib/scan";
+import { downloadAjarLinux } from "../lib/downloadWrapper";
+import { bySeverity, fixFirst, isUnknownDevice, scoreLevel, severityCounts } from "../lib/scan";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { useDeviceName } from "../components/DeviceCard";
 import FindingCard from "../components/FindingCard";
-import { DeviceIcon, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
-import ScoreBadge, { SeverityBadge } from "../components/ScoreBadge";
+import { DeviceIcon, IconAsk, IconBell, IconChevron, IconDownload, IconRefresh } from "../components/Icons";
+import ScoreBadge, { SEVERITY_ICON, SeverityBadge } from "../components/ScoreBadge";
 
 const readOpen = () => {
   try {
@@ -28,9 +28,8 @@ export default function Dashboard() {
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(readOpen);
-  const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all" | null>(null);
+  const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all">("all");
   const isMobile = useIsMobile();
-  const [mobileWidgetMode, setMobileWidgetMode] = useState(false);
   const [mobileNotifActive, setMobileNotifActive] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
@@ -42,8 +41,9 @@ export default function Dashboard() {
       if (res === "granted") {
         setMobileNotifActive(true);
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        new Notification("NetCheck", {
+        new Notification("Ajar", {
           body: t("mobile.notifyActive"),
+          icon: "/favicon.ico",
         });
       }
     } catch {
@@ -54,8 +54,9 @@ export default function Dashboard() {
   const testMobileNotification = () => {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-    new Notification("NetCheck Alertă", {
-      body: "Notificările pe telefon sunt active! Vei primi alerte instant când serverul detectează vulnerabilități.",
+    new Notification(t("desktop.testNotifyTitle"), {
+      body: t("desktop.testNotifyBody"),
+      icon: "/favicon.ico",
     });
   };
 
@@ -132,28 +133,9 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      {/* Mobile Mode Switcher & Mobile Real-time Notifications */}
+      {/* Mobile Real-time Notifications */}
       {isMobile && (
         <div className="stack gap-m" style={{ gap: 12 }}>
-          <div className="segmented" style={{ width: "100%", justifyContent: "center" }}>
-            <button
-              type="button"
-              className={!mobileWidgetMode ? "on" : ""}
-              onClick={() => setMobileWidgetMode(false)}
-              style={{ flex: 1, textAlign: "center" }}
-            >
-              📊 {t("mobile.modeFull")}
-            </button>
-            <button
-              type="button"
-              className={mobileWidgetMode ? "on" : ""}
-              onClick={() => setMobileWidgetMode(true)}
-              style={{ flex: 1, textAlign: "center" }}
-            >
-              📱 {t("mobile.modeWidget")}
-            </button>
-          </div>
-
           <section className="mobile-notify-card">
             <div className="row spread center-y">
               <div className="row" style={{ gap: 10 }}>
@@ -186,57 +168,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* When in Mobile Widget Mode, show the high-contrast mobile widget */}
-      {isMobile && mobileWidgetMode ? (
-        <section className="mobile-widget-card">
-          <span className="strong" style={{ fontSize: 18, color: "var(--walnut)" }}>
-            📱 {t("mobile.widgetTitle")}
-          </span>
-          <div className="center">
-            <ScoreBadge score={scan.score} size="large" />
-          </div>
-          <div className="stack" style={{ gap: 4 }}>
-            <span className="strong" style={{ fontSize: 17 }}>
-              {scan.ssid ?? t("network.unknownName")}
-            </span>
-            <span className={allFindings.length > 0 ? "text-risky strong" : "text-safe strong"} style={{ fontSize: 14 }}>
-              {allFindings.length > 0
-                ? t("mobile.vulnerabilityDetected", { count: allFindings.length })
-                : t("mobile.networkSafe")}
-            </span>
-          </div>
-
-          <div className="row wrap center gap-m">
-            <SeverityBadge severity="high" count={counts.high} />
-            <SeverityBadge severity="medium" count={counts.medium} />
-            <SeverityBadge severity="low" count={counts.low} />
-          </div>
-
-          <div className="stack" style={{ gap: 10, width: "100%" }}>
-            <button
-              type="button"
-              className="button primary large"
-              onClick={startScanFlow}
-              style={{ width: "100%", justifyContent: "center" }}
-            >
-              <IconRefresh size={18} />
-              {t("dashboard.rescan")}
-            </button>
-            <button
-              type="button"
-              className="button large"
-              onClick={downloadDesktopWrapper}
-              style={{ width: "100%", justifyContent: "center" }}
-              title={t("desktop.downloadTitle")}
-            >
-              <IconDownload size={18} />
-              {t("desktop.download")}
-            </button>
-          </div>
-        </section>
-      ) : (
-        <>
-          <section className="row spread end">
+      <section className="row spread end">
         <div className="stack">
           <ScoreBadge score={scan.score} />
           <span className="muted">
@@ -276,6 +208,21 @@ export default function Dashboard() {
               </p>
             )}
             <div className="row wrap gap-m">
+              <a
+                className="button"
+                href={href({
+                  name: "ask",
+                  query: t("finding.rephraseQuestion", {
+                    code: finding.code,
+                    device: deviceName(first.device.device_type),
+                    ip: first.device.ip,
+                  }),
+                })}
+                title={t("dashboard.askAi")}
+              >
+                <IconAsk />
+                {t("dashboard.askAi")}
+              </a>
               <button
                 type="button"
                 className="button"
@@ -301,26 +248,26 @@ export default function Dashboard() {
       <section className="dashboard-filter-section stack" style={{ gap: 12 }}>
         <div className="row spread baseline">
           <h2 className="h3 serif">{t("dashboard.filterTitle")}</h2>
-          {selectedSeverity && (
-            <button
-              type="button"
-              className="link-button muted"
-              onClick={() => setSelectedSeverity(null)}
-            >
-              {t("common.hide")}
-            </button>
-          )}
         </div>
         <div className="row wrap gap-m" role="group" aria-label={t("dashboard.bySeverity")}>
           <button
             type="button"
-            className={`pill${selectedSeverity === "all" ? " on" : ""}`}
+            className="chip"
             style={{
               cursor: "pointer",
+              font: "inherit",
+              fontSize: 16,
+              minHeight: 40,
+              padding: "6px 16px",
+              background: selectedSeverity === "all" ? "var(--hover)" : "var(--surface)",
+              color: "var(--text)",
+              border: `1px solid ${selectedSeverity === "all" ? "var(--walnut)" : "var(--line)"}`,
+              boxShadow: selectedSeverity === "all" ? "0 0 0 2px var(--walnut)" : undefined,
               fontWeight: selectedSeverity === "all" ? 700 : 500,
-              background: selectedSeverity === "all" ? "var(--hover)" : undefined,
+              transition: "all 0.15s ease",
             }}
-            onClick={() => setSelectedSeverity(selectedSeverity === "all" ? null : "all")}
+            onClick={() => setSelectedSeverity("all")}
+            aria-pressed={selectedSeverity === "all"}
           >
             {t("dashboard.filterAll", { count: allFindings.length })}
           </button>
@@ -330,45 +277,58 @@ export default function Dashboard() {
               <button
                 key={severity}
                 type="button"
-                className={`pill${isSelected ? " on" : ""}`}
+                className={`chip sev-${severity}`}
                 style={{
                   cursor: "pointer",
-                  padding: "0 10px",
-                  borderColor: isSelected ? "var(--walnut)" : undefined,
-                  boxShadow: isSelected ? "0 0 0 2px var(--walnut)" : undefined,
-                  background: isSelected ? "var(--hover)" : undefined,
+                  font: "inherit",
+                  fontSize: 16,
+                  minHeight: 40,
+                  padding: "6px 16px",
+                  borderWidth: isSelected ? 2 : 1,
+                  boxShadow: isSelected
+                    ? `0 0 0 2px var(--${severity === "high" ? "red" : severity === "medium" ? "amber" : "blue"})`
+                    : undefined,
+                  fontWeight: isSelected ? 700 : 500,
+                  transition: "all 0.15s ease",
                 }}
-                onClick={() => setSelectedSeverity(isSelected ? null : severity)}
+                onClick={() => setSelectedSeverity(isSelected ? "all" : severity)}
+                aria-pressed={isSelected}
               >
-                <SeverityBadge severity={severity} count={counts[severity]} />
+                <span aria-hidden="true">{SEVERITY_ICON[severity]}</span>
+                {t(`severity.count.${severity}`, { count: counts[severity] })}
               </button>
             );
           })}
         </div>
 
-        {selectedSeverity && (
-          <div className="dashboard-filtered-findings stack gap-m" style={{ marginTop: 8 }}>
-            <p className="muted" style={{ fontWeight: 600 }}>
-              {selectedSeverity === "all"
-                ? t("dashboard.findingsList", { count: displayedFindings.length })
-                : `${t(`severity.${selectedSeverity}`)} (${displayedFindings.length})`}
-            </p>
-            {displayedFindings.length === 0 ? (
-              <p className="muted">{t("dashboard.noFindingsForSeverity")}</p>
-            ) : (
-              displayedFindings.map(({ finding: f, device: d }) => (
+        <div className="dashboard-filtered-findings stack gap-m" style={{ marginTop: 8 }}>
+          <p className="muted" style={{ fontWeight: 600 }}>
+            {selectedSeverity === "all"
+              ? t("dashboard.findingsList", { count: displayedFindings.length })
+              : `${t(`severity.${selectedSeverity}`)} (${displayedFindings.length})`}
+          </p>
+          {displayedFindings.length === 0 ? (
+            <p className="card muted" style={{ padding: "16px 20px" }}>{t("dashboard.noFindingsForSeverity")}</p>
+          ) : (
+            displayedFindings.map(({ finding: f, device: d }) => {
+              const dName = d
+                ? isUnknownDevice(d)
+                  ? t("device.unknownTitle")
+                  : deviceName(d.device_type)
+                : t("device.unknownTitle");
+              return (
                 <FindingCard
                   key={`${f.ip}-${f.code}-${f.port ?? "noport"}`}
                   finding={f}
-                  deviceName={d ? deviceName(d.device_type) : t("device.type.unknown")}
+                  deviceName={dName}
                   device={d}
                   showDevice
                   onRescan={startScanFlow}
                 />
-              ))
-            )}
-          </div>
-        )}
+              );
+            })
+          )}
+        </div>
       </section>
 
       {diff && changes > 0 && (
@@ -393,8 +353,6 @@ export default function Dashboard() {
             </ul>
           )}
         </section>
-      )}
-        </>
       )}
     </div>
   );

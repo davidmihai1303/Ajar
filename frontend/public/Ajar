@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  Ajar - Asistent de Securitate pentru Retea (Linux Desktop Application)
+#  Hackathon R Systems 2026 - Secure Networks, Simply Explained
+# ==============================================================================
+set -e
+
+APP_NAME="Ajar"
+APP_DIR="${HOME}/.local/share/ajar"
+BIN_DIR="${HOME}/.local/bin"
+DESKTOP_DIR="${HOME}/.local/share/applications"
+TARGET_BIN="${BIN_DIR}/ajar"
+DESKTOP_FILE="${DESKTOP_DIR}/ajar.desktop"
+
+mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESKTOP_DIR}"
+
+echo "=============================================================="
+echo "          Instalare si Lansare Ajar pentru Linux"
+echo "=============================================================="
+echo ""
+echo "[1/4] Configurare directoare locale..."
+
+SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+if [ -f "${SCRIPT_PATH}" ] && [ "${SCRIPT_PATH}" != "${TARGET_BIN}" ]; then
+    cp "${SCRIPT_PATH}" "${TARGET_BIN}"
+    chmod +x "${TARGET_BIN}"
+fi
+
+echo "[2/4] Creare scurtatura desktop (ajar.desktop)..."
+cat > "${DESKTOP_FILE}" << 'EOF'
+[Desktop Entry]
+Name=Ajar
+GenericName=Network Security Scanner
+Comment=Securitate pentru reteaua ta, explicata simplu
+Exec=bash -c "${HOME}/.local/bin/ajar"
+Icon=security-high
+Terminal=false
+Type=Application
+Categories=Network;Security;System;Utility;
+StartupWMClass=ajar
+Keywords=security;network;scan;nmap;ajar;
+EOF
+chmod +x "${DESKTOP_FILE}"
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "${DESKTOP_DIR}" >/dev/null 2>&1 || true
+fi
+
+echo "[3/4] Verificare server Ajar..."
+URL=""
+for candidate in "http://127.0.0.1:8001" "http://127.0.0.1:5173"; do
+    if curl -s --max-time 1 "${candidate}" >/dev/null 2>&1; then
+        URL="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${URL}" ]; then
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        if [ -f "docker-compose.yml" ]; then
+            echo "Pornesc serverul Ajar prin Docker..."
+            docker compose up -d >/dev/null 2>&1 || true
+            sleep 2
+            URL="http://127.0.0.1:8001"
+        fi
+    fi
+fi
+
+if [ -z "${URL}" ]; then
+    URL="http://127.0.0.1:8001"
+fi
+
+echo "[4/4] Lansare aplicatie Ajar (${URL})..."
+
+if command -v notify-send >/dev/null 2>&1; then
+    notify-send "Ajar" "Aplicatia Ajar a fost instalata si ruleaza!" -i security-high 2>/dev/null || true
+fi
+
+LAUNCHED=0
+for browser in "google-chrome" "google-chrome-stable" "chromium" "chromium-browser" "brave-browser" "microsoft-edge"; do
+    if command -v "${browser}" >/dev/null 2>&1; then
+        "${browser}" --app="${URL}" >/dev/null 2>&1 &
+        LAUNCHED=1
+        break
+    fi
+done
+
+if [ "${LAUNCHED}" -eq 0 ]; then
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "${URL}" >/dev/null 2>&1 &
+    elif command -v firefox >/dev/null 2>&1; then
+        firefox -new-window "${URL}" >/dev/null 2>&1 &
+    else
+        echo "Te rugam sa deschizi browserul la adresa: ${URL}"
+    fi
+fi
+
+echo ""
+echo "=============================================================="
+echo "  SUCCES! Ajar a fost instalat pe sistemul tau Linux!"
+echo "  - Comanda terminal: ajar"
+echo "  - Aplicatie in meniu: Ajar (Securitate Retea)"
+echo "  - Interfata deschisa: ${URL}"
+echo "=============================================================="

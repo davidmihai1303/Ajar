@@ -1,6 +1,6 @@
 // Typed fetch helpers for /api/* (network, scans, history, explain, ask).
 // When the backend can't be reached the app switches to demo data and says so on screen.
-import { demoDiff, demoExplanation, demoHistory, demoNetwork, demoScans } from "./demo";
+import { demoAsk, demoDiff, demoExplanation, demoHistory, demoNetwork, demoScans } from "./demo";
 import type { AskResponse, Explanation, HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./proposedTypes";
 
 export class ApiError extends Error {
@@ -102,7 +102,7 @@ export const api = {
 
   ask: (scanId: string, question: string, lang: Lang, signal?: AbortSignal): Promise<AskResponse> =>
     demo
-      ? Promise.resolve({ available: false, can_answer: false, answer: null })
+      ? Promise.resolve(demoAsk(question, lang))
       : request("/api/ask", {
           method: "POST",
           signal,

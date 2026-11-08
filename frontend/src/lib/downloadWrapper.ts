@@ -1,12 +1,14 @@
 /**
- * Direct download for the NetCheck Desktop Companion Wrapper installer.
- * Downloads the self-contained NetCheck_Desktop_Setup.bat file.
+ * Direct download for the Ajar Linux executable.
+ * Downloads the self-contained Ajar Linux application launcher.
  */
-export function downloadDesktopWrapper(): void {
+export function downloadAjarLinux(): void {
   const link = document.createElement("a");
-  link.href = "/NetCheck_Desktop_Setup.bat";
-  link.setAttribute("download", "NetCheck_Desktop_Setup.bat");
+  link.href = "/Ajar";
+  link.setAttribute("download", "Ajar");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
+
+export const downloadDesktopWrapper = downloadAjarLinux;
