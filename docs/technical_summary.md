@@ -5,11 +5,11 @@
 ## Lab setup
 
 One iPhone hotspot (`RSH-Byte_me`, `172.20.10.0/28`). The scanner is an MSI laptop running Ubuntu and
-nmap 7.98, joined only to the hotspot. The target is a Mac with Docker Desktop (setups A + B + C):
-Redis, Mosquitto 1.6, nginx serving "Router Admin Login", fake Telnet / vsftpd 2.3.4 banners
-(`lab/fake_services.py`, no real shell behind them), plus the Mac's own Screen Sharing, File Sharing,
-Remote Login and AirPlay. Before/after: `scan_01.xml` scores **0**. After switching those services off,
-`scan_03_after.xml` scores **75**. Details: `lab/README.md`.
+nmap 7.98, joined only to the hotspot. Four team-owned targets (setups A + B + C): the iPhone, a Mac
+(nginx serving "Router Admin Login", fake Telnet / vsftpd 2.3.4 banners from `lab/fake_services.py`
+with no real shell behind them, and macOS sharing services), a Windows laptop (RDP, SMB, MySQL) and a
+Raspberry Pi (SSH, VNC). Before/after in `lab/scans/` (MACs masked): 9 finding types, score **0** →
+**5** after switching off the Mac's services. Details: `lab/README.md`.
 
 ## Architecture
 

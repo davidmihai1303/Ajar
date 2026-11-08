@@ -9,31 +9,31 @@
 <debugging level="0"/>
 <hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.1" addrtype="ipv4"/>
-<address addr="D6:CE:40:02:F9:64" addrtype="mac"/>
+<address addr="D6:CE:40:00:00:00" addrtype="mac"/>
 <hostnames>
 </hostnames>
 </hosthint>
 <hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.12" addrtype="ipv4"/>
-<address addr="E8:FB:1C:CB:58:65" addrtype="mac" vendor="AzureWave Technology"/>
+<address addr="E8:FB:1C:00:00:00" addrtype="mac" vendor="AzureWave Technology"/>
 <hostnames>
 </hostnames>
 </hosthint>
 <hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.13" addrtype="ipv4"/>
-<address addr="88:A2:9E:5E:FF:07" addrtype="mac" vendor="Raspberry Pi (Trading)"/>
+<address addr="88:A2:9E:00:00:00" addrtype="mac" vendor="Raspberry Pi (Trading)"/>
 <hostnames>
 </hostnames>
 </hosthint>
 <hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.11" addrtype="ipv4"/>
-<address addr="36:51:BA:A1:13:74" addrtype="mac"/>
+<address addr="36:51:BA:00:00:00" addrtype="mac"/>
 <hostnames>
 </hostnames>
 </hosthint>
 <host starttime="1794127955" endtime="1794128172"><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.1" addrtype="ipv4"/>
-<address addr="D6:CE:40:02:F9:64" addrtype="mac"/>
+<address addr="D6:CE:40:00:00:00" addrtype="mac"/>
 <hostnames>
 <hostname name="_gateway" type="PTR"/>
 </hostnames>
@@ -56,7 +56,7 @@
 </host>
 <host starttime="1794127955" endtime="1794128171"><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.11" addrtype="ipv4"/>
-<address addr="36:51:BA:A1:13:74" addrtype="mac"/>
+<address addr="36:51:BA:00:00:00" addrtype="mac"/>
 <hostnames>
 </hostnames>
 <ports><extraports state="closed" count="1002">
@@ -73,7 +73,7 @@
 </host>
 <host starttime="1794127955" endtime="1794128172"><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.12" addrtype="ipv4"/>
-<address addr="E8:FB:1C:CB:58:65" addrtype="mac" vendor="AzureWave Technology"/>
+<address addr="E8:FB:1C:00:00:00" addrtype="mac" vendor="AzureWave Technology"/>
 <hostnames>
 </hostnames>
 <ports><extraports state="filtered" count="992">
@@ -99,7 +99,7 @@
 </host>
 <host starttime="1794127955" endtime="1794128172"><status state="up" reason="arp-response" reason_ttl="0"/>
 <address addr="172.20.10.13" addrtype="ipv4"/>
-<address addr="88:A2:9E:5E:FF:07" addrtype="mac" vendor="Raspberry Pi (Trading)"/>
+<address addr="88:A2:9E:00:00:00" addrtype="mac" vendor="Raspberry Pi (Trading)"/>
 <hostnames>
 </hostnames>
 <ports><extraports state="closed" count="999">
