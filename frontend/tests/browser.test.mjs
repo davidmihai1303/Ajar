@@ -279,3 +279,62 @@ test("revoking the local assistant in another tab discards a pending reply", asy
   assert.equal(await question.isDisabled(), true);
   assert.equal(await page.getByText("Late reply").count(), 0);
 });
+
+const risky = {
+  ...good, id: "risky", score: 70,
+  devices: [
+    { ip: "192.168.1.1", mac_masked: "50:C7:BF:xx:xx:xx", vendor: "TP-Link", hostname: null, device_type: "router",
+      ports: [{ port: 80, protocol: "tcp", service: "http", product: null, version: null, http_title: "<img src=x onerror=alert(1)>", tunnel: null }] },
+    { ip: "192.168.1.99", mac_masked: null, vendor: null, hostname: null, device_type: "unknown",
+      ports: [{ port: 23, protocol: "tcp", service: "telnet", product: null, version: null, http_title: null, tunnel: null }] },
+  ],
+  findings: [
+    { code: "HTTP_ADMIN_CLEARTEXT", severity: "medium", points: 10, ip: "192.168.1.1", port: 80, protocol: "tcp", evidence: "tcp/80 http: <img src=x onerror=alert(1)>" },
+    { code: "TELNET_OPEN", severity: "high", points: 20, ip: "192.168.1.99", port: 23, protocol: "tcp", evidence: "tcp/23 telnet" },
+  ],
+};
+const explainReply = (path) => {
+  if (!path.startsWith("/api/explain/")) return;
+  const code = decodeURIComponent(path.split("/")[3]);
+  return { json: { code, lang: "en", title: `Title ${code}`, explanation: `Why ${code}.`, steps: [`Step one for ${code}`, "Scan again"] } };
+};
+
+test("the report lists the most dangerous device first, with fixes, references and escaped evidence", async (t) => {
+  const page = await open(t, "report", { scan: risky, onApi: explainReply });
+  await page.getByRole("heading", { name: "Network safety report" }).waitFor();
+  const items = page.locator(".report-finding");
+  await items.nth(1).getByText("Title HTTP_ADMIN_CLEARTEXT").waitFor();
+  assert.equal(await items.count(), 2);
+  assert.match(await items.nth(0).innerText(), /Title TELNET_OPEN[\s\S]*Unknown device[\s\S]*Step one for TELNET_OPEN/);
+  assert.match(await items.nth(1).innerText(), /CIS 3\.10 · OWASP IoT I3 · OWASP IoT I7/);
+  assert.match(await items.nth(1).innerText(), /<img src=x onerror=alert\(1\)>/);
+  assert.equal(await page.locator(".report img").count(), 0);
+  assert.match(await page.locator(".report table").innerText(), /50:C7:BF:xx:xx:xx/);
+  assert.match(await page.locator(".report-summary").innerText(), /70/);
+
+  await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
+  await page.getByRole("button", { name: "Print or save as PDF" }).click();
+  assert.equal(await page.evaluate(() => window.__printed), 1);
+
+  await page.emulateMedia({ media: "print" });
+  assert.equal(await page.locator(".sidebar").isVisible(), false);
+  assert.equal(await page.getByRole("button", { name: "Print or save as PDF" }).isVisible(), false);
+});
+
+test("the dashboard links to the report and finding details show the standards in Romanian", async (t) => {
+  const page = await open(t, "dashboard", { scan: risky, lang: "ro", onApi: explainReply });
+  await page.getByRole("link", { name: "Raport pentru omul tău de IT" }).click();
+  await page.getByRole("heading", { name: "Raport despre siguranța rețelei" }).waitFor();
+
+  const devices = await open(t, "devices/192.168.1.99", { scan: risky, lang: "ro", onApi: explainReply });
+  await devices.getByText("Detalii tehnice").first().click();
+  await devices.getByText("Standarde:").first().waitFor();
+  assert.match(await devices.locator(".references").first().innerText(), /CIS 4\.8 · CIS 3\.10 · OWASP IoT I2 · OWASP IoT I7/);
+});
+
+test("an unreadable scan has no report", async (t) => {
+  const broken = { ...good, id: "broken", score: null, error: "unreadable", findings_available: false };
+  const page = await open(t, "report", { scan: broken });
+  await page.getByText("This scan's file couldn't be read.").waitFor();
+  assert.equal(await page.locator(".report").count(), 0);
+});
