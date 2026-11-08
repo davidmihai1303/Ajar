@@ -246,6 +246,7 @@
   "history.deleteText": "This deletes all scans stored on this computer. You can't get them back.",
   "history.deleteConfirm": "Delete history",
   "ask.turnOff": "Turn off the local assistant",
+  "ask.newChat": "New conversation",
   "ask.title": "Ask me about your network",
   "ask.about": "About the scan from {date}, network {ssid}",
   "ask.s1": "Which device is the most dangerous?",

@@ -394,3 +394,35 @@ test("the notification inbox can be checked off, filtered and remembers what was
   await page.getByRole("button", { name: "Mark all as unread" }).click();
   assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
 });
+
+test("Ask is a conversation: follow-ups carry earlier turns, and New conversation starts over", async (t) => {
+  const bodies = [];
+  const page = await open(t, "ask", { onApi(path, request) {
+    if (path === "/api/llm/status") return { json: { available: true, state: "ready" } };
+    if (path === "/api/ask") {
+      const body = request.postDataJSON();
+      bodies.push(body);
+      return { json: { available: true, can_answer: true, answer: `Answer ${bodies.length}` } };
+    }
+  } });
+  const input = page.getByRole("textbox");
+  await input.fill("What problems do I have?");
+  await input.press("Enter");
+  await page.getByRole("dialog").getByRole("button", { name: "Turn on the assistant" }).click();
+  await page.getByText("Answer 1").waitFor();
+  for (const [i, q] of ["Explain", "How do I close them?", "And the router?", "And the TV?"].entries()) {
+    await input.fill(q);
+    await input.press("Enter");
+    await page.getByText(`Answer ${i + 2}`).waitFor();
+  }
+  assert.deepEqual(bodies[0].history, []);
+  assert.deepEqual(bodies[1].history, [{ question: "What problems do I have?", answer: "Answer 1" }]);
+  // Only the last three exchanges travel with a question.
+  assert.deepEqual(bodies[4].history.map(turn => turn.question), ["Explain", "How do I close them?", "And the router?"]);
+  await page.getByRole("button", { name: "New conversation" }).click();
+  assert.equal(await page.locator(".bubble-user").count(), 0);
+  await input.fill("Fresh start");
+  await input.press("Enter");
+  await page.getByText("Answer 6").waitFor();
+  assert.deepEqual(bodies[5].history, []);
+});
