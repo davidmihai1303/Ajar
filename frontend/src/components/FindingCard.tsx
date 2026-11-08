@@ -2,13 +2,30 @@
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Explanation, Finding } from "../api/types";
-import { useApp } from "../state/AppState";
+import type { Device, Explanation, Finding } from "../api/types";
 import { referencesFor } from "../lib/references";
+import { useIsMobile } from "../lib/useIsMobile";
+import { href } from "../router";
+import { useApp } from "../state/AppState";
+import AskAiButton from "./AskAiButton";
+import { DeviceIcon, IconRefresh } from "./Icons";
 import { SeverityBadge } from "./ScoreBadge";
 
-export default function FindingCard({ finding }: { finding: Finding }) {
+export default function FindingCard({
+  finding,
+  deviceName,
+  device,
+  showDevice = false,
+  onRescan,
+}: {
+  finding: Finding;
+  deviceName?: string;
+  device?: Device;
+  showDevice?: boolean;
+  onRescan?: () => void;
+}) {
   const { t, lang, scan, aiConsent } = useApp();
+  const isMobile = useIsMobile();
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
   const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off">("idle");
@@ -56,8 +73,30 @@ export default function FindingCard({ finding }: { finding: Finding }) {
     }
   };
 
+  const askPrompt = t("finding.rephraseQuestion", {
+    code: finding.code,
+    device: deviceName ?? finding.ip,
+    ip: finding.ip,
+  });
+
   return (
     <article className={`card finding${finding.severity === "high" ? " finding-high" : ""}`}>
+      {showDevice && (
+        <div className="row spread center" style={{ marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid var(--line)", flexWrap: "wrap", gap: 8 }}>
+          <div className="row center" style={{ gap: 8, flexWrap: "wrap" }}>
+            <DeviceIcon type={device?.device_type ?? "unknown"} size={18} />
+            <a href={href({ name: "device", ip: finding.ip })} className="strong" style={{ color: "var(--walnut)", textDecoration: "none" }}>
+              {deviceName}
+            </a>
+            <span className="muted mono" style={{ fontSize: 13 }}>IP {finding.ip}</span>
+            {device?.hostname && <span className="muted" style={{ fontSize: 13 }}>({device.hostname})</span>}
+            {device?.vendor && <span className="muted" style={{ fontSize: 13 }}>• {device.vendor}</span>}
+          </div>
+          <a href={href({ name: "device", ip: finding.ip })} className="link-button muted" style={{ fontSize: 13, minHeight: "auto", padding: "4px 8px" }}>
+            {t("dashboard.viewDevice")} →
+          </a>
+        </div>
+      )}
       <div className="row">
         <SeverityBadge severity={finding.severity} />
         <span className="muted">{t("finding.points", { points: finding.points })}</span>
@@ -72,10 +111,21 @@ export default function FindingCard({ finding }: { finding: Finding }) {
         </ol>
       )}
       <div className="finding-footer">
-        <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
-          {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
-        </button>
-        {rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
+        <div className="row wrap gap-m">
+          <AskAiButton question={askPrompt} />
+          {onRescan && (
+            <button type="button" className="button" onClick={onRescan} title={t("dashboard.rescanNote")}>
+              <IconRefresh />
+              {t("dashboard.rescan")}
+            </button>
+          )}
+          {!isMobile && (
+            <button type="button" className="button" onClick={rephrase} disabled={rephraseState === "loading"}>
+              {rephraseState === "loading" ? t("finding.rephrasing") : t("finding.rephrase")}
+            </button>
+          )}
+        </div>
+        {!isMobile && rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
         <details className="tech">
           <summary>{t("common.technical")}</summary>
           <p className="mono">

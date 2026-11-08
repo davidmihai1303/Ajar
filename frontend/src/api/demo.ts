@@ -1,6 +1,6 @@
 // Demo data, used only when the backend is not reachable (the UI says so in a banner).
 // Values follow the catalog rules so the screens show realistic findings and scores.
-import type { Device, Explanation, Finding, HistoryItem, Lang, NetworkInfo, Scan, ScanDiff } from "./types";
+import type { AskResponse, Device, Explanation, Finding, HistoryItem, Lang, NetworkInfo, Scan, ScanDiff } from "./types";
 
 export const demoNetwork: NetworkInfo = {
   ssid: "RSH-07",
@@ -69,6 +69,11 @@ const laptop: Device = {
   device_type: "laptop",
   ports: [],
 };
+// The same laptop with remote login turned on (an Info finding, 0 points) in the two latest scans.
+const laptopSsh: Device = {
+  ...laptop,
+  ports: [{ port: 22, protocol: "tcp", service: "ssh", product: "OpenSSH", version: "9.6", http_title: null, tunnel: null }],
+};
 const oldServer: Device = {
   ip: "172.20.10.3",
   mac_masked: "00:1B:21:xx:xx:xx",
@@ -98,6 +103,7 @@ const cameraFindings = [
   f("CAMERA_STREAM_EXPOSED", "high", 20, "172.20.10.5", 554, "tcp", "rtsp · Hikvision 7513 rtspd"),
   f("HTTP_ADMIN_CLEARTEXT", "medium", 10, "172.20.10.5", 80, "tcp", 'http · title "Web Login" · no ssl'),
 ];
+const sshFinding = f("SSH_OPEN", "info", 0, "172.20.10.2", 22, "tcp", "ssh · OpenSSH 9.6");
 const telnetFinding = f("TELNET_OPEN", "high", 20, "172.20.10.3", 23, "tcp", "telnet · BusyBox telnetd");
 
 const score = (findings: Finding[]) => Math.max(0, 100 - findings.reduce((sum, item) => sum + item.points, 0));
@@ -118,8 +124,8 @@ const build = (id: string, created_at: string, source: Scan["source"], file: str
 });
 
 export const demoScans: Scan[] = [
-  build("demo-4", "2026-11-07T14:32:00", "live", "scan_2026-11-07_1432.xml", [router, laptop, camera, hub, tv, unknown], [...routerFindings, ...cameraFindings, hubFinding, unknownFinding]),
-  build("demo-3", "2026-11-06T18:05:00", "live", "scan_2026-11-06_1805.xml", [router, laptop, hub, tv, unknown], [...routerFindings, hubFinding, unknownFinding]),
+  build("demo-4", "2026-11-07T14:32:00", "live", "scan_2026-11-07_1432.xml", [router, laptopSsh, camera, hub, tv, unknown], [...routerFindings, sshFinding, ...cameraFindings, hubFinding, unknownFinding]),
+  build("demo-3", "2026-11-06T18:05:00", "live", "scan_2026-11-06_1805.xml", [router, laptopSsh, hub, tv, unknown], [...routerFindings, sshFinding, hubFinding, unknownFinding]),
   build("demo-2", "2026-11-04T11:20:00", "import", "lab_after.xml", [{ ...router, ports: router.ports.filter((p) => p.port === 53) }, laptop, { ...oldServer, ports: [] }], []),
   build("demo-1", "2026-11-03T10:02:00", "import", "lab_before.xml", [router, laptop, oldServer], [...routerFindings, telnetFinding]),
 ];
@@ -227,6 +233,18 @@ const TEXTS: Record<string, Record<Lang, Text>> = {
       steps: ["Look at the router's list of connected devices.", "If you don't recognise it, change your Wi-Fi password."],
     },
   },
+  SSH_OPEN: {
+    ro: {
+      title: "Conectarea criptată la distanță este accesibilă",
+      explanation: "Dispozitivul oferă SSH pentru conectare criptată la distanță. Acest lucru poate fi normal dacă îl administrezi astfel.",
+      steps: ["Verifică dacă folosești accesul la distanță.", "Oprește SSH dacă nu îl folosești sau permite accesul doar persoanelor care administrează dispozitivul."],
+    },
+    en: {
+      title: "Encrypted remote login is reachable",
+      explanation: "This device offers SSH for encrypted remote login. This can be expected if you administer it remotely.",
+      steps: ["Check whether you use remote login.", "Turn off SSH if unused, or restrict access to the people who administer the device."],
+    },
+  },
   TELNET_OPEN: {
     ro: {
       title: "Conectare de la distanță fără criptare",
@@ -248,4 +266,82 @@ export function demoExplanation(code: string, lang: Lang): Explanation {
     steps: [],
   };
   return { code, lang, ...text };
+}
+
+export function demoAsk(question: string, lang: Lang): AskResponse {
+  const q = question.toLowerCase();
+  if (
+    q.includes("camera") ||
+    q.includes("cameră") ||
+    q.includes("stream") ||
+    q.includes("rtsp") ||
+    q.includes("554")
+  ) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Camera IP (172.20.10.5) transmite fluxul video prin RTSP (portul 554) necriptat și fără parolă. Oricine din rețeaua locală se poate conecta și poate vedea imaginile în direct. Pași recomandați: intră în interfața web a camerei, configurează o parolă complexă pentru fluxul RTSP și dezactivează accesul anonim."
+          : "The IP camera (172.20.10.5) streams unencrypted video over RTSP (port 554) without authentication. Anyone on your local network can connect and view the feed. Recommended steps: open the camera's web interface, set a strong RTSP password, and disable anonymous streaming.",
+    };
+  }
+  if (q.includes("mqtt") || q.includes("hub") || q.includes("1883") || q.includes("mosquitto")) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Hub-ul IoT (172.20.10.6) are deschis portul MQTT 1883 fără criptare. Protocolul MQTT este folosit de dispozitivele inteligente pentru transmiterea comenzilor. Fără autentificare, un atacator local poate injecta comenzi către prize sau senzori. Pași recomandați: activează autentificarea cu utilizator și parolă și oprește accesul anonim în setările brokerului MQTT."
+          : "The IoT hub (172.20.10.6) has unencrypted MQTT port 1883 exposed. Smart devices use this protocol to exchange commands. Without authentication, anyone on the network can control devices or read sensor data. Recommended steps: enable username/password authentication and disable anonymous access in MQTT broker settings.",
+    };
+  }
+  if (q.includes("upnp") || q.includes("1900") || q.includes("router")) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Routerul (172.20.10.1) are activ serviciul UPnP pe portul 1900 UDP. UPnP permite dispozitivelor din rețea să deschidă automat porturi prin firewall către internet. Dacă un dispozitiv este compromis, poate expune rețeaua. Pași recomandați: intră în panoul routerului (172.20.10.1) și dezactivează UPnP din setările avansate."
+          : "The router (172.20.10.1) has UPnP enabled on UDP port 1900. UPnP allows local devices to automatically open firewall ports. If an infected device requests port forwarding, it could expose your network to the internet. Recommended steps: log into your router (172.20.10.1) and disable UPnP in Advanced Settings.",
+    };
+  }
+  if (q.includes("http") || q.includes("cleartext") || q.includes("necriptat") || q.includes("admin") || q.includes("login") || q.includes("portul 80") || q.includes("80/")) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Panoul de administrare al routerului este accesibil prin HTTP simplu (portul 80), fără criptare SSL/TLS. Parolele introduse la conectare pot fi interceptate pe Wi-Fi. Accesează panoul prin HTTPS (portul 443) și dezactivează accesul HTTP necriptat din setările routerului."
+          : "The router admin interface is accessible via unencrypted HTTP (port 80). Login credentials could be sniffed on the local network. Connect via HTTPS (port 443) instead and disable plaintext HTTP admin access.",
+    };
+  }
+  if (q.includes("unknown") || q.includes("necunoscut")) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Dispozitivul necunoscut (172.20.10.9) nu are un producător sau nume de rețea identificabil, dar are porturi deschise. Verifică în interfața routerului lista adreselor DHCP pentru a identifica fizic dispozitivul. Dacă nu este al tău, blochează-i accesul sau schimbă parola rețelei Wi-Fi."
+          : "The unknown device (172.20.10.9) has no recognisable vendor or hostname, yet has open ports. Check your router's DHCP client table to identify the hardware. If unrecognised, revoke its access or update your Wi-Fi password.",
+    };
+  }
+  if (q.includes("periculos") || q.includes("dangerous") || q.includes("primul") || q.includes("first")) {
+    return {
+      available: true,
+      can_answer: true,
+      answer:
+        lang === "ro"
+          ? "Cel mai periculos dispozitiv detectat în scanare este Camera IP (172.20.10.5), deoarece transmite video în clar pe rețea (RTSP pe 554). Este prima problemă pe care ar trebui să o remediezi securizând camera."
+          : "The most dangerous device detected is the IP Camera (172.20.10.5), because it streams live video unencrypted over RTSP port 554. You should secure this device first.",
+    };
+  }
+  return {
+    available: true,
+    can_answer: true,
+    answer:
+      lang === "ro"
+        ? `Pe baza scanării rețelei, problema indicată implică un serviciu deschis necriptat sau neprotejat. Îți recomand să verifici setările dispozitivului, să activezi autentificarea și să închizi portul dacă serviciul nu este esențial.`
+        : `Based on your network scan, the indicated issue involves an unencrypted or exposed service. I recommend checking the device settings, enabling authentication, and closing the port if the service is not essential.`,
+  };
 }

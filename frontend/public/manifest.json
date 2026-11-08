@@ -1,0 +1,26 @@
+{
+  "name": "Ajar · Securitatea rețelei tale",
+  "short_name": "Ajar",
+  "id": "/",
+  "start_url": "/#/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf8f5",
+  "theme_color": "#5a3a22",
+  "description": "Verificator local de securitate a rețelei. Local network security checker.",
+  "icons": [
+    { "src": "/ajar-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/ajar-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/ajar-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ajar · widget",
+      "short_name": "Widget",
+      "description": "Scorul și problemele pe scurt / Score and problems at a glance",
+      "url": "/#/widget",
+      "icons": [{ "src": "/ajar-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

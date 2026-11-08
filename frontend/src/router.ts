@@ -1,4 +1,4 @@
-// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask, #/report.
+// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask, #/report, #/widget, #/inbox.
 import { useEffect, useState } from "react";
 
 export type Route =
@@ -8,11 +8,15 @@ export type Route =
   | { name: "device"; ip: string }
   | { name: "scan" }
   | { name: "history" }
-  | { name: "ask" }
-  | { name: "report" };
+  | { name: "ask"; query?: string }
+  | { name: "report" }
+  | { name: "widget" }
+  | { name: "inbox" };
 
 export function parseRoute(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const [pathPart, queryPart] = hash.replace(/^#\/?/, "").split("?");
+  const parts = pathPart.split("/").filter(Boolean);
+  const search = new URLSearchParams(queryPart || "");
   switch (parts[0]) {
     case "dashboard":
       return { name: "dashboard" };
@@ -23,9 +27,13 @@ export function parseRoute(hash: string): Route {
     case "history":
       return { name: "history" };
     case "ask":
-      return { name: "ask" };
+      return { name: "ask", query: search.get("q") ?? undefined };
     case "report":
       return { name: "report" };
+    case "widget":
+      return { name: "widget" };
+    case "inbox":
+      return { name: "inbox" };
     default:
       return { name: "home" };
   }
@@ -34,6 +42,9 @@ export function parseRoute(hash: string): Route {
 export const href = (route: Route): string => {
   if (route.name === "device") return `#/devices/${encodeURIComponent(route.ip)}`;
   if (route.name === "home") return "#/";
+  if (route.name === "ask" && "query" in route && route.query) {
+    return `#/ask?q=${encodeURIComponent(route.query)}`;
+  }
   return `#/${route.name}`;
 };
 

@@ -52,6 +52,46 @@ async function confirmNetwork(page) {
   await dialog.getByRole("button", { name: "Yes, scan" }).click();
 }
 
+test("Ask starts Qwen after consent, retries the original message, and unloads on turn off", async t => {
+  let state = "idle";
+  let release;
+  const questions = [];
+  let unloads = 0;
+  const page = await open(t, "ask", { async onApi(path, request) {
+    if (path === "/api/llm/status") return { json: {
+      available: state === "ready", state, ...(state === "failed" ? { reason: "memory" } : {}),
+    } };
+    if (path === "/api/llm/unload") { unloads++; return { status: 204 }; }
+    if (path === "/api/ask") {
+      questions.push(request.postDataJSON().question);
+      if (questions.length === 1) {
+        state = "starting";
+        await new Promise(resolve => { release = resolve; });
+        state = "failed";
+        return { json: { available: false, can_answer: false, answer: "Offline" } };
+      }
+      state = "ready";
+      return { json: { available: true, can_answer: true, answer: "Scan fixture answer" } };
+    }
+  } });
+  const question = "Which device needs attention?";
+  await page.getByRole("textbox").fill(question);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  assert.deepEqual(questions, []);
+  await page.getByRole("dialog").getByRole("button", { name: "Turn on the assistant" }).click();
+  await page.getByText("Starting local AI…").waitFor();
+  release();
+  await page.getByText(/Qwen ran out of GPU memory/).waitFor();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByText("Scan fixture answer").waitFor();
+  assert.deepEqual(questions, [question, question]);
+  assert.equal(await page.locator(".bubble-user").count(), 1);
+  assert.equal(await page.locator(".bubble-ajar").count(), 1);
+  await page.getByRole("button", { name: "Turn off the local assistant" }).click();
+  await page.getByRole("button", { name: "Turn it on" }).waitFor();
+  assert.equal(unloads, 1);
+});
+
 test("consent follows fresh detection and a change after consent requires another confirmation", async (t) => {
   let current = { ...network };
   const posts = [];
@@ -337,4 +377,20 @@ test("an unreadable scan has no report", async (t) => {
   const page = await open(t, "report", { scan: broken });
   await page.getByText("This scan's file couldn't be read.").waitFor();
   assert.equal(await page.locator(".report").count(), 0);
+});
+
+test("the notification inbox can be checked off, filtered and remembers what was read", async t => {
+  const page = await open(t, "inbox");
+  const item = page.locator(".inbox-item").first();
+  await item.getByText("Scan finished: score 100/100").waitFor();
+  assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
+  await item.getByRole("checkbox").check();
+  assert.equal(await page.locator(".sidebar .inbox-badge").count(), 0);
+  await page.getByRole("button", { name: "Unread", exact: true }).click();
+  await page.getByText("No unread notifications.").waitFor();
+  await page.reload();
+  await page.locator(".inbox-item").first().waitFor();
+  assert.equal(await page.locator(".inbox-item").first().getByRole("checkbox").isChecked(), true);
+  await page.getByRole("button", { name: "Mark all as unread" }).click();
+  assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
 });

@@ -7,6 +7,7 @@ Prints, for each call, whether the model's output was accepted ("llm") or replac
 built-in text ("static"/"fallback") and why. Uses made-up lab-like data, no scan needed.
 """
 import time
+import argparse
 
 from netcheck.explain.llm import (EvidenceDevice, EvidenceFinding, EvidencePort, LLMClient,
                                   ScanEvidence, StaticText, ask, personalize)
@@ -30,8 +31,27 @@ BASE_STREAM_EN = StaticText("Other devices on this network can reach this media 
                             ("Open the device's sharing settings.", "Turn off streaming if you do not use it."))
 
 
+def verify_qwen(client: LLMClient) -> None:
+    """A failing process exit makes an accidental static fallback visible at rehearsal."""
+    if not client.unload() or client.status().get("state") != "idle":
+        raise SystemExit("The managed router must be reachable and idle")
+    for lang, question in (("en", "Which ports are open on 172.20.10.11?"),
+                           ("ro", "Ce porturi sunt deschise pe 172.20.10.11?")):
+        start = time.monotonic()
+        answer = ask(client, question, EVIDENCE, lang)
+        print(f"{lang} {answer.source} {time.monotonic()-start:.2f}s {answer.text}", flush=True)
+        if answer.source != "llm" or not answer.grounded:
+            raise SystemExit("The real model did not return accepted evidence")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--verify-qwen", action="store_true")
+    args = parser.parse_args()
     client = LLMClient.from_config()
+    if args.verify_qwen:
+        verify_qwen(client)
+        return
     print(f"endpoint: {client.base_url or '(not set)'} | enabled: {client.enabled} | available: {client.available()}")
     for title, call in [
         ("personalize TELNET (ro)", lambda: personalize(client, TELNET, BASE_RO, "ro")),

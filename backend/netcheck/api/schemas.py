@@ -138,3 +138,5 @@ class Answer(BaseModel):
 
 class ModelStatus(BaseModel):
     available: bool
+    state: Literal["idle", "starting", "ready", "failed"] | None = None
+    reason: Literal["gpu", "memory", "weights", "port", "load", "timeout", "server"] | None = None
