@@ -1,15 +1,7 @@
 // Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and stays put when the
 // sidebar hides), then "new scan", navigation, recent scans, language and the hide button.
-import { useEffect, useState } from "react";
 import { formatDate } from "../i18n";
 import { downloadAjarLinux } from "../lib/downloadWrapper";
-import {
-  getNotificationPermission,
-  isNotificationSupported,
-  requestDesktopNotification,
-  sendDesktopNotification,
-  type NotificationStatus,
-} from "../lib/notifications";
 import { scoreLevel } from "../lib/scan";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href, type Route } from "../router";
@@ -38,23 +30,10 @@ export default function Sidebar({
 }: {
   current: Route["name"];
 }) {
-  const { t, lang, history, scan, selectScan, collapsed, setCollapsed } = useApp();
+  const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications } = useApp();
   const isMobile = useIsMobile();
   const active = current === "device" ? "devices" : current === "home" ? "dashboard" : current;
   const navItems = NAV.filter((item) => !(isMobile && item.route.name === "ask"));
-
-  const [notifStatus, setNotifStatus] = useState<NotificationStatus>(getNotificationPermission);
-
-  useEffect(() => {
-    setNotifStatus(getNotificationPermission());
-  }, []);
-
-  const handleNotificationClick = async () => {
-    if (notifStatus === "default") {
-      const res = await requestDesktopNotification();
-      setNotifStatus(res);
-    }
-  };
 
   return (
     <aside id="sidebar" className={`sidebar${collapsed ? " hidden" : ""}`} aria-label={t("nav.label")} aria-hidden={collapsed}>
@@ -85,41 +64,30 @@ export default function Sidebar({
             {t("desktop.download")}
           </button>
 
-          {isNotificationSupported() && (
-            <button
-              type="button"
-              className={`sidebar-item${notifStatus === "granted" ? " active" : ""}`}
-              onClick={handleNotificationClick}
-              disabled={notifStatus === "granted" || notifStatus === "denied"}
-              style={{
-                width: "100%",
-                background: "transparent",
-                border: 0,
-                textAlign: "left",
-                cursor: notifStatus === "default" ? "pointer" : "default",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                opacity: notifStatus === "denied" ? 0.6 : 1,
-              }}
-              title={
-                notifStatus === "denied"
-                  ? t("desktop.notifyDeniedTooltip")
-                  : notifStatus === "granted"
-                  ? t("desktop.notifyEnabledShort")
-                  : t("desktop.notifyEnable")
-              }
-            >
-              <IconBell />
-              <span>
-                {notifStatus === "granted"
-                  ? "✓ " + t("desktop.notifyEnabledShort")
-                  : notifStatus === "denied"
-                  ? t("desktop.notifyDenied")
-                  : t("desktop.notifyEnable")}
-              </span>
-            </button>
-          )}
+          <button
+            type="button"
+            className={`sidebar-item${notificationsEnabled ? " active" : ""}`}
+            onClick={() => void enableNotifications()}
+            disabled={notificationsEnabled}
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: 0,
+              textAlign: "left",
+              cursor: notificationsEnabled ? "default" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+            title={notificationsEnabled ? t("desktop.notifyEnabledShort") : t("desktop.notifyEnable")}
+          >
+            <IconBell />
+            <span>
+              {notificationsEnabled
+                ? "✓ " + t("desktop.notifyEnabledShort")
+                : t("desktop.notifyEnable")}
+            </span>
+          </button>
         </div>
       </nav>
 

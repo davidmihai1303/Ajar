@@ -23,33 +23,13 @@ const readOpen = () => {
 };
 
 export default function Dashboard() {
-  const { t, lang, scan, history, setBubble, startScanFlow } = useApp();
+  const { t, lang, scan, history, setBubble, startScanFlow, notificationsEnabled, enableNotifications } = useApp();
   const deviceName = useDeviceName();
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
   const [alertsOpen, setAlertsOpen] = useState(readOpen);
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | "all">("all");
   const isMobile = useIsMobile();
-  const [mobileNotifActive, setMobileNotifActive] = useState(
-    typeof Notification !== "undefined" && Notification.permission === "granted"
-  );
-
-  const enableMobileNotifications = async () => {
-    if (typeof Notification === "undefined") return;
-    try {
-      const res = await Notification.requestPermission();
-      if (res === "granted") {
-        setMobileNotifActive(true);
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        new Notification("Ajar", {
-          body: t("mobile.notifyActiveBody"),
-          icon: "/favicon.ico",
-        });
-      }
-    } catch {
-      /* ignore */
-    }
-  };
 
   const assessed = scan !== null && scan.score !== null && !scan.error;
   const first = assessed ? fixFirst(scan) : null;
@@ -128,13 +108,13 @@ export default function Dashboard() {
       {isMobile && (
         <button
           type="button"
-          className={`button ${mobileNotifActive ? "" : "primary"}`}
+          className={`button ${notificationsEnabled ? "" : "primary"}`}
           style={{ width: "100%", justifyContent: "center", minHeight: 44, gap: 8, marginBottom: 16 }}
-          onClick={enableMobileNotifications}
-          disabled={mobileNotifActive}
+          onClick={() => void enableNotifications()}
+          disabled={notificationsEnabled}
         >
           <IconBell />
-          {mobileNotifActive ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
+          {notificationsEnabled ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
         </button>
       )}
 

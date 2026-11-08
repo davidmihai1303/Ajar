@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ApiError, api, connect, isDemo } from "../api/client";
 import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } from "../api/proposedTypes";
 import { makeT, type TFunction } from "../i18n";
+import { playAlertChime } from "../lib/audioAlert";
 import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
@@ -57,6 +58,8 @@ interface AppState {
   setCollapsed: (value: boolean) => void;
   dialogs: number;
   openDialog: () => () => void;
+  notificationsEnabled: boolean;
+  enableNotifications: () => Promise<void>;
   placement: AjarPlacement;
   anchor: AjarAnchor | null;
   setAnchor: (value: AjarAnchor | null) => void;
@@ -120,6 +123,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     store.set("ajar.ai", value ? "yes" : "no");
   }, []);
 
+  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
+    const saved = store.get("ajar.notifications");
+    if (saved === "yes") return true;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") return true;
+    return false;
+  });
+
+  const enableNotifications = useCallback(async () => {
+    setNotificationsEnabledState(true);
+    store.set("ajar.notifications", "yes");
+
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      try {
+        navigator.vibrate([100, 50, 100]);
+      } catch {
+        /* ignore */
+      }
+    }
+    playAlertChime();
+
+    if (typeof Notification !== "undefined") {
+      try {
+        if (Notification.permission === "default") {
+          await new Promise<void>((resolve) => {
+            try {
+              const res = Notification.requestPermission(() => resolve());
+              if (res && typeof res.then === "function") res.then(() => resolve()).catch(() => resolve());
+            } catch {
+              resolve();
+            }
+          });
+        }
+        if (Notification.permission === "granted") {
+          try {
+            new Notification("Ajar", {
+              body: t("mobile.notifyActiveBody"),
+              icon: "/favicon.ico",
+            });
+          } catch {
+            /* ServiceWorker / mobile restriction fallback */
+          }
+        }
+      } catch {
+        /* Ignore permission rejection */
+      }
+    }
+  }, [t]);
+
   useEffect(() => {
     const syncConsent = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage || (event.key !== null && event.key !== "ajar.ai")) return;
@@ -177,19 +228,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const notifyChanges = useCallback(
     async (previousId: string | undefined, next: Scan) => {
-      if (!previousId || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      if (!previousId || !notificationsEnabled) return;
       try {
         const diff = await api.diff(previousId, next.id);
         if (diff.devices_added.length || diff.ports_opened.length) {
-          new Notification("Ajar", {
-            body: t("notify.changes", { devices: diff.devices_added.length, ports: diff.ports_opened.length }),
-          });
+          playAlertChime();
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try {
+              new Notification("Ajar", {
+                body: t("notify.changes", { devices: diff.devices_added.length, ports: diff.ports_opened.length }),
+              });
+            } catch {
+              /* ignore */
+            }
+          }
         }
       } catch {
         /* the dashboard shows the same alerts anyway */
       }
     },
-    [t],
+    [notificationsEnabled, t],
   );
 
   const runScan = useCallback(async () => {
@@ -212,13 +270,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await loadHistory().catch(() => undefined);
       navigate({ name: "dashboard" });
       void notifyChanges(previousId, result);
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        const high = result.findings.filter((f) => f.severity === "high").length;
-        const medium = result.findings.filter((f) => f.severity === "medium").length;
-        new Notification(t("desktop.scanCompleted", { score: result.score ?? "—" }), {
-          body: t("desktop.scanCompletedBody", { high, medium }),
-          icon: "/favicon.ico",
-        });
+      if (notificationsEnabled) {
+        playAlertChime();
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try {
+            const high = result.findings.filter((f) => f.severity === "high").length;
+            const medium = result.findings.filter((f) => f.severity === "medium").length;
+            new Notification(t("desktop.scanCompleted", { score: result.score ?? "—" }), {
+              body: t("desktop.scanCompletedBody", { high, medium }),
+              icon: "/favicon.ico",
+            });
+          } catch {
+            /* ignore */
+          }
+        }
       }
       if (typeof Notification !== "undefined" && Notification.permission === "default" && !store.get("ajar.ack.notify")) {
         setFlow("notify");
@@ -317,6 +382,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCollapsed,
     dialogs,
     openDialog,
+    notificationsEnabled,
+    enableNotifications,
     placement,
     anchor,
     setAnchor,
