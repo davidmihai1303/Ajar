@@ -113,6 +113,9 @@ class LLMClient:
 
     @classmethod
     def from_config(cls) -> "LLMClient":
+        if config.QWEN_RUNTIME_DIR and not config.LLM_BASE_URL:
+            from .qwen import ManagedQwen
+            return ManagedQwen(config.QWEN_RUNTIME_DIR, config.LLM_TIMEOUT)
         return cls(config.LLM_BASE_URL, config.LLM_API_KEY, config.LLM_MODEL,
                    config.LLM_TIMEOUT)
 
@@ -136,6 +139,19 @@ class LLMClient:
         self._available, self._checked_at = ok, now
         return ok
 
+    def status(self) -> dict:
+        return {"available": self.available()}
+
+    def unload(self) -> bool:
+        # A separately configured endpoint belongs to its operator.
+        return True
+
+    def prepare_inference(self) -> bool:
+        return True
+
+    def can_personalize(self) -> bool:
+        return self.enabled
+
     def chat(self, system: str, user: str, json_mode: bool) -> Optional[str]:
         """Return the assistant text, or None on any error. Deterministic settings + cache."""
         if not self.enabled:
@@ -155,6 +171,8 @@ class LLMClient:
         with self._lock:
             if key in self._cache:
                 return self._cache[key]
+        if not self.prepare_inference():
+            return None
         try:
             with self._client(timeout=self.timeout) as c:
                 r = c.post("/chat/completions", json=body)
@@ -226,7 +244,7 @@ def personalize(client: LLMClient, finding: EvidenceFinding, base: StaticText,
     """Add one verified device label to the supplied, language-matched finding guidance."""
     lang = "en" if lang == "en" else "ro"
     static = Explanation(base.explanation, list(base.fixes), source="static")
-    if not client.enabled:
+    if not client.can_personalize():
         return static
     context = _select(client, "Select the most useful label for this finding: " + finding.code,
                       finding_contexts(finding, lang), 1)

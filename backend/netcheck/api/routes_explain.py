@@ -68,9 +68,15 @@ def personalize(code: str, body: api.PersonalizeRequest, request: Request) -> ap
     return base.model_copy(update={"explanation": result.explanation})
 
 
-@router.get("/llm/status")
+@router.get("/llm/status", response_model_exclude_none=True)
 def model_status(request: Request) -> api.ModelStatus:
-    return api.ModelStatus(available=request.app.state.model.available())
+    return api.ModelStatus(**request.app.state.model.status())
+
+
+@router.post("/llm/unload", status_code=204)
+def unload_model(request: Request):
+    if not request.app.state.model.unload():
+        raise HTTPException(503, "unload_failed")
 
 
 @router.post("/ask")
