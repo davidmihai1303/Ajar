@@ -122,8 +122,11 @@ gitleaks detect --source . --no-banner           # must be clean
   conversation history as untrusted data.
 - Tests: `docker compose run --rm app pytest -q tests/test_llm.py` (mock server, no real model needed).
   Free-answer tests opt in; `tests/conftest.py` defaults every test to record-only mode.
-- Personalisation ("Explain for my device") still only selects one verified label; the team's
-  explanation and steps are shown unchanged.
+- "Explain for my device" (finding card) does not call the model itself: it opens Ask with a prompt
+  in the chat box (`#/ask?draft=…`, not sent) built only from catalog facts (problem title, severity,
+  code), the device type, vendor, IP and port. No hostname, banner or page title. The user reads,
+  edits and sends it; the answer then follows the Ask rules above. The finding card always shows the
+  team's explanation and steps unchanged.
 
 ## User-facing text
 
