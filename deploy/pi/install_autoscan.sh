@@ -20,7 +20,6 @@ AVAHI=/etc/avahi/services/ajar.service
 
 UNIT_FILES=(ajar-autoscan.service ajar-autoscan.timer ajar-watch.service ajar-notify.service)
 LEGACY=(ajar-discover.timer ajar-discover.service)    # stage 2, replaced by ajar-watch.service
-TOKEN="${AJAR_STATE_DIR:-$HOME/.config/ajar}/notify.token"
 
 remove_legacy() {
   sudo systemctl disable --now "${LEGACY[@]}" 2>/dev/null || true
@@ -43,15 +42,8 @@ for unit in "${UNIT_FILES[@]}"; do
 done
 chmod 0755 "$HERE/ajar_autoscan.py" "$HERE/ajar_notify.py"
 sudo systemctl daemon-reload
-sudo systemctl enable --now ajar-autoscan.timer ajar-watch.service
-
-if [[ -f "$TOKEN" ]]; then
-  sudo systemctl enable --now ajar-notify.service
-  sudo systemctl restart ajar-notify.service
-else
-  echo "Serviciul pentru telefon pornește după împerechere / The phone service starts after pairing:"
-  echo "  python3 deploy/pi/ajar_notify.py pair && sudo systemctl enable --now ajar-notify.service"
-fi
+sudo systemctl enable --now ajar-autoscan.timer ajar-watch.service ajar-notify.service
+sudo systemctl restart ajar-watch.service ajar-notify.service
 
 if [[ "${1:-}" == "--announce" ]]; then
   sudo install -m 0644 "$HERE/avahi-ajar.service" "$AVAHI"
@@ -64,5 +56,6 @@ echo "Instalat pentru $USER, repo $REPO / Installed for $USER, repo $REPO."
 echo "Important: wrapper-ul root are modul --discover. Dacă nu l-ai reinstalat / if not reinstalled yet:"
 echo "  sudo ./scanner/install.sh $USER && sudo systemctl restart netcheck-agent"
 echo "Acordul pentru rețea / Network consent: python3 deploy/pi/ajar_autoscan.py consent grant"
+echo "Împerechere telefon / Pair a phone:     python3 deploy/pi/ajar_notify.py pair"
 systemctl list-timers ajar-autoscan.timer --no-pager || true
 systemctl --no-pager --lines=0 status ajar-watch.service ajar-notify.service || true

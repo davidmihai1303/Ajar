@@ -49,8 +49,8 @@ ajar-notify.service (port 8002) ─► GET /events?since=N&wait=60 + token ─�
 
 | Regulă | Detaliu |
 |---|---|
-| doar citire | o singură cale: `GET /events`. `POST`/`DELETE` → 405. Nu poate porni scanări |
-| token obligatoriu | `Authorization: Bearer <token>`, comparat în timp constant. Fără el → 401 |
+| aproape doar citire | `GET /events` pentru evenimente. Singura scriere: `POST /pair`, cererea de împerechere a unui telefon, acceptată **doar** cât e deschisă fereastra. Nu poate porni scanări |
+| token pe telefon | fiecare telefon are **propriul** token (`Authorization: Bearer <token>`); pe Pi se păstrează doar SHA-256 al lui (`phones.json`). Fără token valid → 401 |
 | conținut minim | `id`, `time`, `type`, `severity`, `count` (+ `score`, `previous` la scăderea scorului). **Niciodată** IP, MAC, nume sau producător |
 | long-poll | `?since=<ultimul id>&wait=<0..60>`: răspunde imediat ce apare un eveniment, altfel după `wait` secunde cu listă goală |
 | fără `since` | răspunde doar `{"last_id": N}`, ca un telefon nou să pornească „de acum" |
@@ -59,18 +59,43 @@ ajar-notify.service (port 8002) ─► GET /events?since=N&wait=60 + token ─�
 
 Tipuri de evenimente: `new_device` (info), `new_high_risk` (high), `score_drop` (medium).
 
+## Împerecherea telefonului (fără cod QR)
+
+Ca la Bluetooth: amândouă ecranele arată același cod, iar **aprobarea se face pe Pi**. Aprobarea nu se
+poate face de pe telefon, altfel un telefon străin din Wi-Fi s-ar putea aproba singur.
+
+```
+Pi:       python3 deploy/pi/ajar_notify.py pair          → „Fereastră deschisă 2 min"
+Telefon:  găsește Pi-ul (_ajar._tcp) → POST /pair {"name": "Pixel 7"}
+          ← {"request_id": "…", "code": "471", "expires_in": 118}  → arată „Cod: 4 7 1"
+Pi:       „Cerere de la «Pixel 7». Cod de verificare: 4  7  1. Scrie DA" → verifici telefonul → DA
+Telefon:  GET /pair/<request_id> la ~1 s → {"status": "approved", "token": "…", "phone_id": "…"}
+          (token-ul e dat o singură dată; apoi fereastra se închide)
+```
+
+| Situație | Răspuns |
+|---|---|
+| fereastra nu e deschisă sau a expirat | `POST /pair` → 403 |
+| altă cerere așteaptă deja | `POST /pair` → 409 (o singură cerere odată) |
+| respinsă pe Pi | `GET /pair/<id>` → `{"status": "rejected"}` |
+| token deja luat | `GET /pair/<id>` → `{"status": "delivered"}` (fără token) |
+| id greșit | 404 |
+
+Alternativă: `python3 deploy/pi/ajar_notify.py pair --qr` creează un token pentru un telefon și îl arată
+ca QR. Token-ul vechi (`notify.token`, dacă există) funcționează în continuare și apare în `devices` ca
+`qr-legacy`.
+
 ## Instalare (o singură dată)
 
 Ai nevoie de aplicație (containerul pe `127.0.0.1:8001`) și de serviciul `netcheck-agent`, ambele pornite.
 
 ```bash
 cd ~/Smarthack
-sudo apt install -y qrencode                      # opțional: codul QR pentru împerechere
 sudo ./scanner/install.sh $USER                   # wrapper-ul root are modul --discover
 sudo systemctl restart netcheck-agent             # agentul are endpoint-ul /discover
 python3 deploy/pi/ajar_autoscan.py consent grant  # arată rețeaua, scrii DA
-python3 deploy/pi/ajar_notify.py pair             # token + cod QR pentru telefon
 ./deploy/pi/install_autoscan.sh --announce        # fără sudo; --announce = anunț mDNS _ajar._tcp
+python3 deploy/pi/ajar_notify.py pair             # deschizi fereastra, telefonul cere, aprobi cu DA
 ```
 
 `install_autoscan.sh` șterge singur timer-ul de 10 minute de la etapa 2 (`ajar-discover`), dacă există.
@@ -84,7 +109,10 @@ python3 deploy/pi/ajar_notify.py pair             # token + cod QR pentru telefo
 | `python3 deploy/pi/ajar_autoscan.py check` | ar rula o scanare acum? (nu scanează) |
 | `python3 deploy/pi/ajar_autoscan.py discover --no-scan` | o verificare de device-uri noi, acum |
 | `python3 scanner/agent.py discover --confirm` | cine e conectat (MAC-uri afișate mascat) |
-| `python3 deploy/pi/ajar_notify.py pair [--new]` | arată din nou QR-ul / schimbă token-ul |
+| `python3 deploy/pi/ajar_notify.py pair [--minutes 2]` | fereastră de împerechere cu cod de verificare |
+| `python3 deploy/pi/ajar_notify.py pair --qr` | alternativ: token pentru un telefon, ca cod QR |
+| `python3 deploy/pi/ajar_notify.py devices` | telefoanele împerecheate |
+| `python3 deploy/pi/ajar_notify.py unpair <id\|nume>` / `--all` | scoate un telefon / toate |
 | `sudo systemctl start ajar-autoscan.service` | o scanare completă **acum** (test) |
 | `journalctl -u ajar-watch -u ajar-autoscan -u ajar-notify -f` | log în timp real |
 | `systemctl status ajar-watch ajar-notify` | starea serviciilor |
@@ -96,12 +124,15 @@ Intervalul de descoperire: `AJAR_WATCH_INTERVAL` (30-600 s, implicit 60), de exe
 ## Test complet (pe hotspotul echipei)
 
 1. `journalctl -u ajar-watch -f` într-un terminal: „Inventar inițial: N dispozitive".
-2. De pe laptop, cu token-ul din `~/.config/ajar/notify.token` și IP-ul Pi-ului:
+2. Împerechere de pe laptop (joacă rolul telefonului). Pe Pi: `python3 deploy/pi/ajar_notify.py pair`, apoi:
    ```bash
+   curl -s -H "Content-Type: application/json" -d '{"name":"laptop-test"}' http://<pi>:8002/pair
+   # → {"request_id": "…", "code": "471", …}   pe Pi apare același cod → scrii DA
+   curl -s http://<pi>:8002/pair/<request_id>   # → {"status": "approved", "token": "…"}
    curl -s -H "Authorization: Bearer <token>" "http://<pi>:8002/events"
    curl -s -H "Authorization: Bearer <token>" "http://<pi>:8002/events?since=<last_id>&wait=60"
    ```
-   A doua comandă rămâne deschisă.
+   Ultima comandă rămâne deschisă.
 3. Conectezi la hotspot un device nou. În sub un minut: în log „DISPOZITIV NOU…", iar `curl`-ul de la
    pasul 2 răspunde imediat cu `{"type": "new_device", …}`. Apoi pornește o scanare completă.
 4. Fără token: `curl -i http://<pi>:8002/events` → `401`.
@@ -109,8 +140,9 @@ Intervalul de descoperire: `AJAR_WATCH_INTERVAL` (30-600 s, implicit 60), de exe
 
 ## Aplicația Android (schiță)
 
-Împerechere: scanezi QR-ul `ajar://pair?host=…&port=8002&token=…&name=…` și salvezi datele în
-`EncryptedSharedPreferences`. Un **foreground service** (cu notificarea permanentă „Ajar veghează rețeaua")
+Împerechere: găsești Pi-ul cu `NsdManager` (`_ajar._tcp`), trimiți `POST /pair`, afișezi codul mare pe
+ecran („Confirmă pe Pi că vezi 4 7 1"), apoi întrebi `GET /pair/<request_id>` la ~1 s până primești
+`approved` + token (sau `rejected` / `expired`). Salvezi host, port și token în `EncryptedSharedPreferences`. Un **foreground service** (cu notificarea permanentă „Ajar veghează rețeaua")
 rulează cât timp telefonul e pe Wi-Fi (`ConnectivityManager.NetworkCallback`); cere și excepția de la
 optimizarea bateriei. Bucla de long-poll:
 

@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
 """Ajar events service for the phone app (stage 3). Standard library only.
 
-    ajar_notify.py pair [--new]   create (or rotate) the token and show the pairing QR code
-    ajar_notify.py serve          long-running service (systemd: ajar-notify.service)
+    ajar_notify.py pair [--open] [--minutes 2]   pairing window: the phone asks, both show a 3-digit
+                                                 code, the owner approves HERE (no QR code needed)
+    ajar_notify.py pair --qr [--name NAME]       alternative: one phone token as a QR code
+    ajar_notify.py devices                       paired phones
+    ajar_notify.py unpair <id|name> | --all      revoke one phone or all
+    ajar_notify.py serve                         long-running service (systemd: ajar-notify.service)
 
-The phone asks:  GET /events?since=<last id>&wait=<0..60>   with   Authorization: Bearer <token>
-and the Pi answers as soon as there is a newer event, or after `wait` seconds with an empty list
-(long-poll). Without `since` it answers only {"last_id": N}, so a newly paired phone starts from now.
+HTTP API (port 8002 by default):
+  GET  /events?since=<id>&wait=<0..60>   Authorization: Bearer <phone token>   (long-poll)
+  GET  /events                           -> {"events": [], "last_id": N}       (start "from now")
+  POST /pair      {"name": "Pixel 7"}    -> {"request_id", "code", "expires_in"}  only while the window
+                                            is open and no other request is pending (403 / 409)
+  GET  /pair/<request id>                -> {"status": "pending" | "approved" (+ token, once) |
+                                            "rejected" | "expired" | "delivered"}
 
 What this service is NOT allowed to do, by design:
-  * start scans or change anything (GET only, one path);
+  * start scans or change anything on the network (the only write is a phone's own pairing request);
   * return IP / MAC addresses, host names or device makers (events contain type, severity, counts);
-  * answer without the token (constant-time comparison), or more than RATE_LIMIT requests per minute
-    per client, or more than MAX_WAITERS open long-polls.
+  * accept a pairing without the owner's approval on the Pi;
+  * answer more than RATE_LIMIT requests per minute per client, or keep more than MAX_WAITERS
+    long-polls open.
 It listens on the home network (default 0.0.0.0:8002) over plain HTTP: anyone who can read the Wi-Fi
-traffic could read the token, and with it only these minimal events. Rotate it with `pair --new`.
+traffic could read a token, and with it only these minimal events. Revoke a phone with `unpair`.
 """
 from __future__ import annotations
 
 import argparse
-import hmac
 import json
 import os
-import secrets
 import shutil
 import socket
 import subprocess
@@ -37,6 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ajar_events import EventLog  # noqa: E402
+from ajar_phones import DEFAULT_WINDOW_MINUTES, PairingError, PairingWindow, PhoneRegistry  # noqa: E402
 
 STATE_DIR = Path(os.environ.get("AJAR_STATE_DIR", Path.home() / ".config" / "ajar"))
 BIND = os.environ.get("AJAR_NOTIFY_BIND", "0.0.0.0")
@@ -46,29 +54,7 @@ MAX_WAIT_S = 60
 POLL_EVERY_S = 1.0
 RATE_LIMIT = 120          # requests per minute per client address
 MAX_WAITERS = 8           # open long-polls at the same time
-
-
-def token_path() -> Path:
-    return STATE_DIR / "notify.token"
-
-
-def load_token() -> str | None:
-    try:
-        token = token_path().read_text(encoding="ascii").strip()
-    except OSError:
-        return None
-    return token or None
-
-
-def new_token() -> str:
-    token = secrets.token_urlsafe(32)
-    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = token_path().with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="ascii") as fh:
-        fh.write(token + "\n")
-    os.replace(tmp, token_path())
-    return token
+MAX_BODY = 1024
 
 
 class RateLimiter:
@@ -105,11 +91,15 @@ def parse_query(query: str) -> tuple[int | None, int]:
 class EventsServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, token: str, log: EventLog, poll_every: float = POLL_EVERY_S):
+    def __init__(self, address, state_dir: Path, poll_every: float = POLL_EVERY_S):
         super().__init__(address, EventsHandler)
-        self.token, self.log, self.poll_every = token, log, poll_every
+        self.log = EventLog(state_dir)
+        self.phones = PhoneRegistry(state_dir)
+        self.window = PairingWindow(state_dir)
+        self.poll_every = poll_every
         self.limiter = RateLimiter(RATE_LIMIT)
         self.waiters = threading.BoundedSemaphore(MAX_WAITERS)
+        self.pair_lock = threading.Lock()
 
 
 class EventsHandler(BaseHTTPRequestHandler):
@@ -127,22 +117,32 @@ class EventsHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _authorized(self) -> bool:
+    def _phone(self) -> str | None:
         header = self.headers.get("Authorization") or ""
-        given = header[7:].strip() if header.startswith("Bearer ") else ""
-        return hmac.compare_digest(given.encode("utf-8"), self.server.token.encode("utf-8"))
+        return self.server.phones.verify(header[7:].strip() if header.startswith("Bearer ") else "")
+
+    def _limited(self) -> bool:
+        if self.server.limiter.allow(self.client_address[0]):
+            return False
+        self._send(429, {"error": "too many requests"})
+        return True
 
     def do_GET(self) -> None:
-        if not self.server.limiter.allow(self.client_address[0]):
-            self._send(429, {"error": "too many requests"})
+        if self._limited():
             return
         path, _, query = self.path.partition("?")
+        if path.startswith("/pair/"):
+            self._pair_status(path[len("/pair/"):])
+            return
         if path != "/events":
             self._send(404, {"error": "not found"})
             return
-        if not self._authorized():
+        if self._phone() is None:
             self._send(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
             return
+        self._events(query)
+
+    def _events(self, query: str) -> None:
         since, wait = parse_query(query)
         if since is None:
             self._send(200, {"events": [], "last_id": self.server.log.last_id()})
@@ -162,14 +162,63 @@ class EventsHandler(BaseHTTPRequestHandler):
         last = found[-1]["id"] if found else max(since, 0)
         self._send(200, {"events": found, "last_id": last})
 
+    def _pair_status(self, request_id: str) -> None:
+        if not 16 <= len(request_id) <= 64 or not all(c.isalnum() or c in "-_" for c in request_id):
+            self._send(404, {"error": "unknown pairing request"})
+            return
+        try:
+            with self.server.pair_lock:            # the token must be handed out exactly once
+                self._send(200, self.server.window.poll(request_id, self.server.phones))
+        except PairingError as err:
+            self._send(err.status, {"error": err.reason})
+
     def do_POST(self) -> None:
+        if self._limited():
+            return
+        if self.path != "/pair":
+            self._send(405, {"error": "read only"})
+            return
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if ctype != "application/json" or not 0 < length <= MAX_BODY:
+            # Answer first, then one bounded read of the pending body, so the client gets the 400
+            # instead of a connection reset (same approach as the scanner agent).
+            self.close_connection = True
+            self._send(400, {"error": "invalid body"})
+            self.connection.settimeout(0.2)
+            try:
+                self.rfile.read1(min(max(length, MAX_BODY), 64 * 1024))
+            except (TimeoutError, ConnectionError, OSError):
+                pass
+            return
+        try:
+            body = json.loads(self.rfile.read(length))
+        except (ValueError, UnicodeDecodeError):
+            self._send(400, {"error": "invalid JSON"})
+            return
+        name = body.get("name") if isinstance(body, dict) else None
+        try:
+            with self.server.pair_lock:
+                self._send(200, self.server.window.request(name if isinstance(name, str) else ""))
+        except PairingError as err:
+            self._send(err.status, {"error": err.reason})
+
+    def do_PUT(self) -> None:
         self._send(405, {"error": "read only"})
 
-    do_PUT = do_DELETE = do_PATCH = do_POST
+    do_DELETE = do_PATCH = do_PUT
 
     def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write("[notify] %s %s\n" % (self.client_address[0], fmt % args))
+        # Never log query strings or pairing ids: only the client and the path family.
+        path = self.path.split("?")[0]
+        family = "/pair/…" if path.startswith("/pair/") else path
+        sys.stderr.write(f"[notify] {self.client_address[0]} {self.command} {family}\n")
 
+
+# ------------------------------------------------------------------ owner commands (on the Pi)
 
 def pi_address() -> str:
     """The Pi's address on the scanned network, from the scanner agent (localhost)."""
@@ -180,17 +229,49 @@ def pi_address() -> str:
         return ""
 
 
-def cmd_pair(rotate: bool) -> int:
-    token = load_token()
-    if token is None or rotate:
-        token = new_token()
-        print("Token nou creat / New token created." + (" Telefoanele vechi trebuie împerecheate din nou / "
-                                                         "Old phones must pair again." if rotate else ""))
+def run_pairing_window(window: PairingWindow, minutes: int, ask=input, sleep=time.sleep,
+                       clock=time.monotonic, out=print) -> int:
+    """Open the window, wait for one phone, show its code and let the owner approve it here."""
+    window.open(minutes)
+    deadline = clock() + minutes * 60
+    out(f"Fereastră de împerechere deschisă {minutes} min. Deschide aplicația Ajar pe telefon.")
+    out(f"Pairing window open for {minutes} min. Open the Ajar app on the phone.")
+    try:
+        while clock() < deadline:
+            request = window.pending()
+            if request is None:
+                sleep(0.5)
+                continue
+            out(f"\nCerere de la / Request from: „{request['name']}”")
+            out(f"Cod de verificare / Verification code:  {'  '.join(request['code'])}")
+            answer = ask("Telefonul tău arată același cod? Scrie DA / Same code on your phone? Type YES: ")
+            approved = answer.strip().upper() in ("DA", "YES")
+            window.decide(approved)
+            if not approved:
+                out("Cerere respinsă / Request rejected.")
+                return 1
+            for _ in range(60):                     # the phone fetches its token within seconds
+                if window.status_name() == "delivered":
+                    out("Telefon împerecheat / Phone paired.")
+                    return 0
+                sleep(0.5)
+            out("Aprobat, dar telefonul nu și-a luat încă token-ul / Approved, but the phone has not "
+                "fetched its token yet. Încearcă din nou / Try again.")
+            return 1
+        out("Fereastra a expirat fără nicio cerere / The window expired without a request.")
+        return 1
+    finally:
+        window.close()
+
+
+def cmd_pair_qr(registry: PhoneRegistry, name: str) -> int:
+    phone_id, token = registry.add(name)
     host = pi_address() or socket.gethostname() + ".local"
     uri = "ajar://pair?" + urllib.parse.urlencode({"host": host, "port": PORT, "token": token,
                                                     "name": socket.gethostname()})
-    print("Scanează codul din aplicația Ajar / Scan this code with the Ajar app.")
-    print("Nu-l arăta altora: conține token-ul / Do not share it: it contains the token.\n")
+    print(f"Telefon nou / New phone: {name} ({phone_id})")
+    print("Scanează codul din aplicația Ajar. Nu-l arăta altora: conține token-ul.")
+    print("Scan this code with the Ajar app. Do not share it: it contains the token.\n")
     qrencode = shutil.which("qrencode")
     if qrencode:
         subprocess.run([qrencode, "-t", "ansiutf8", uri], check=False)
@@ -200,13 +281,31 @@ def cmd_pair(rotate: bool) -> int:
     return 0
 
 
+def cmd_devices(registry: PhoneRegistry) -> int:
+    phones = registry.list()
+    if registry.legacy.exists():
+        phones.append({"id": "qr-legacy", "name": "token vechi / old QR token", "created_at": "-"})
+    if not phones:
+        print("Niciun telefon împerecheat / No paired phone.")
+    for phone in phones:
+        print(f"- {phone['id']}  {phone['name']}  (din / since {phone['created_at']})")
+    return 0
+
+
+def cmd_unpair(registry: PhoneRegistry, ref: str | None, everything: bool) -> int:
+    if everything:
+        registry.remove_all()
+        print("Toate telefoanele au fost scoase / All phones removed.")
+        return 0
+    removed = registry.remove(ref or "")
+    print(f"Scoase / Removed: {removed}")
+    return 0 if removed else 1
+
+
 def cmd_serve() -> int:
-    token = load_token()
-    if token is None:
-        print("Nu există token. Rulează mai întâi / No token. First run: ajar_notify.py pair", file=sys.stderr)
-        return 1
-    server = EventsServer((BIND, PORT), token, EventLog(STATE_DIR))
-    print(f"[notify] listening on {BIND}:{PORT} (GET /events, token required)", flush=True)
+    server = EventsServer((BIND, PORT), STATE_DIR)
+    print(f"[notify] listening on {BIND}:{PORT} (GET /events with a phone token; POST /pair only while "
+          f"a pairing window is open)", flush=True)
     server.serve_forever()
     return 0
 
@@ -218,10 +317,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ajar_notify.py")
     sub = parser.add_subparsers(dest="command", required=True)
     pair = sub.add_parser("pair")
-    pair.add_argument("--new", action="store_true", help="rotate the token (old phones stop working)")
+    mode = pair.add_mutually_exclusive_group()
+    mode.add_argument("--open", action="store_true", help="pairing window with a 3-digit code (default)")
+    mode.add_argument("--qr", action="store_true", help="one phone token as a QR code instead")
+    pair.add_argument("--minutes", type=int, default=DEFAULT_WINDOW_MINUTES, choices=range(1, 11), metavar="1-10")
+    pair.add_argument("--name", default="Telefon (QR)")
+    sub.add_parser("devices")
+    unpair = sub.add_parser("unpair")
+    unpair.add_argument("ref", nargs="?", help="phone id or name (see `devices`)")
+    unpair.add_argument("--all", action="store_true")
     sub.add_parser("serve")
     args = parser.parse_args(argv)
-    return cmd_pair(args.new) if args.command == "pair" else cmd_serve()
+
+    registry = PhoneRegistry(STATE_DIR)
+    if args.command == "pair":
+        if args.qr:
+            return cmd_pair_qr(registry, args.name)
+        if not sys.stdin.isatty():
+            print("Împerecherea se aprobă interactiv / Pairing is approved interactively.", file=sys.stderr)
+            return 1
+        return run_pairing_window(PairingWindow(STATE_DIR), args.minutes)
+    if args.command == "devices":
+        return cmd_devices(registry)
+    if args.command == "unpair":
+        if not args.all and not args.ref:
+            parser.error("unpair needs a phone id/name or --all")
+        return cmd_unpair(registry, args.ref, args.all)
+    return cmd_serve()
 
 
 if __name__ == "__main__":
