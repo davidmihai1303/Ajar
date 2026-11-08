@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { ModelStatus } from "../api/types";
 import { formatDate } from "../i18n";
+import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
 import ErrorBanner from "../components/ErrorBanner";
 import { IconSend } from "../components/Icons";
@@ -117,6 +118,30 @@ export default function Ask() {
     }
   };
 
+  const route = useRoute();
+  const initialQueryHandled = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (route.name === "ask" && route.query && initialQueryHandled.current !== route.query) {
+      const initialText = route.query;
+      setQuestion(initialText);
+      // Marked as handled only when it is actually sent: an effect cleanup (React StrictMode, or a
+      // consent change within 50 ms) cancels the timer, and the next run must send it again.
+      const timer = window.setTimeout(() => {
+        initialQueryHandled.current = initialText;
+        if (aiConsent === true) {
+          void send(initialText, true);
+        } else {
+          setPending(initialText);
+          setAskConsent(true);
+        }
+      }, 50);
+      return () => {
+        window.clearTimeout(timer);
+      };
+    }
+  }, [route, aiConsent]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void send(question);
@@ -216,9 +241,11 @@ export default function Ask() {
             setAskConsent(false);
             setAiConsent(true);
             if (pending) {
-              // Consent is saved; send the question that was waiting for it.
-              void send(pending, true);
+              const toSend = pending;
               setPending(null);
+              window.setTimeout(() => {
+                void send(toSend, true);
+              }, 50);
             }
           }}
         />

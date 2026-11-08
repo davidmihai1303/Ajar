@@ -378,3 +378,19 @@ test("an unreadable scan has no report", async (t) => {
   await page.getByText("This scan's file couldn't be read.").waitFor();
   assert.equal(await page.locator(".report").count(), 0);
 });
+
+test("the notification inbox can be checked off, filtered and remembers what was read", async t => {
+  const page = await open(t, "inbox");
+  const item = page.locator(".inbox-item").first();
+  await item.getByText("Scan finished: score 100/100").waitFor();
+  assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
+  await item.getByRole("checkbox").check();
+  assert.equal(await page.locator(".sidebar .inbox-badge").count(), 0);
+  await page.getByRole("button", { name: "Unread", exact: true }).click();
+  await page.getByText("No unread notifications.").waitFor();
+  await page.reload();
+  await page.locator(".inbox-item").first().waitFor();
+  assert.equal(await page.locator(".inbox-item").first().getByRole("checkbox").isChecked(), true);
+  await page.getByRole("button", { name: "Mark all as unread" }).click();
+  assert.equal(await page.locator(".sidebar .inbox-badge").textContent(), "1");
+});

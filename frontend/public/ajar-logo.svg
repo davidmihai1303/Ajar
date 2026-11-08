@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 20 440 210" width="880" height="420" role="img" aria-label="Ajar">
+  <rect x="90" y="30" width="120" height="190" rx="8" fill="#5A3A22"/>
+  <rect x="98" y="38" width="104" height="176" rx="5" fill="#B07A45"/>
+  <rect x="98" y="38" width="6" height="176" fill="#9A6838"/>
+  <rect x="112" y="152" width="76" height="48" rx="3" fill="none" stroke="#8A5A30" stroke-width="2"/>
+  <ellipse cx="116" cy="102" rx="8" ry="4.5" fill="#F29BB0"/>
+  <ellipse cx="184" cy="102" rx="8" ry="4.5" fill="#F29BB0"/>
+  <path d="M120 88 Q130 76 140 88 M160 88 Q170 76 180 88" fill="none" stroke="#2B1B10" stroke-width="3" stroke-linecap="round"/>
+  <path d="M134 102 Q150 126 166 102 Z" fill="#2B1B10"/>
+  <path d="M181 131 v-7 a7.5 7.5 0 0 1 15 0 v7" fill="none" stroke="#C9971F" stroke-width="3.5"/>
+  <rect x="177" y="129" width="23" height="19" rx="3" fill="#E0B23A"/>
+  <circle cx="188.5" cy="137" r="2.4" fill="#5A3A22"/>
+  <rect x="187.4" y="137" width="2.2" height="6" fill="#5A3A22"/>
+  <g fill="none" stroke="#5A3A22" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="276" cy="128" r="26"/>
+    <path d="M302 102 V154"/>
+    <path d="M336 102 V156 Q336 176 318 176"/>
+    <circle cx="396" cy="128" r="26"/>
+    <path d="M422 102 V154"/>
+    <path d="M456 102 V154"/>
+    <path d="M456 128 C456 110 468 102 486 102"/>
+  </g>
+  <circle cx="336" cy="76" r="8" fill="#E0B23A"/>
+</svg>

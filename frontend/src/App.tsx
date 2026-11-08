@@ -1,12 +1,17 @@
 // Layout + simple navigation between pages. First screen = Welcome until a scan exists,
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
+import { useEffect } from "react";
 import { switchDemo } from "./api/client";
 import LanguageToggle from "./components/LanguageToggle";
-import { useEffect } from "react";
+import MobileHeader from "./components/MobileHeader";
+import { useIsMobile } from "./lib/useIsMobile";
+import { useMobilePoller } from "./lib/useMobilePoller";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
+import { InboxProvider } from "./state/Inbox";
 import AjarDock from "./components/AjarDock";
+import AjarWidget from "./components/AjarWidget";
 import ErrorBanner from "./components/ErrorBanner";
 import PermissionDialog from "./components/PermissionDialog";
 import Sidebar, { SidebarShowButton } from "./components/Sidebar";
@@ -15,6 +20,7 @@ import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import History from "./pages/History";
+import Inbox from "./pages/Inbox";
 import Report from "./pages/Report";
 import Scan from "./pages/Scan";
 import ScanProgress from "./pages/ScanProgress";
@@ -24,10 +30,13 @@ function Shell() {
   const app = useApp();
   const { t, ready, scan, scanning, flow, acceptFlow, cancelFlow, demo, collapsed } = app;
   const route = useRoute();
+  const isMobile = useIsMobile();
+  useMobilePoller(isMobile);
 
   useEffect(() => {
     if (ready && scan && route.name === "home") navigate({ name: "dashboard" });
-  }, [ready, scan, route.name]);
+    if (isMobile && route.name === "ask") navigate({ name: "dashboard" });
+  }, [ready, scan, route.name, isMobile]);
 
   let content: JSX.Element;
   if (!ready) {
@@ -41,13 +50,22 @@ function Shell() {
         <button className="button" onClick={() => switchDemo(true)}>{t("common.openDemo")}</button>
       </div>
     </main>;
+  } else if (route.name === "widget") {
+    // The installed app's widget shortcut: Ajar and the basic numbers, nothing else.
+    content = (
+      <main className="widget-page" id="main">
+        <AjarWidget standalone />
+      </main>
+    );
   } else if (scanning) {
     content = <ScanProgress />;
   } else if (!scan && (route.name === "home" || route.name === "dashboard")) {
     content = <Welcome />;
   } else {
     let page: JSX.Element;
-    if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask") {
+    if (isMobile) {
+      page = route.name === "inbox" ? <Inbox /> : <Dashboard />;
+    } else if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask" && route.name !== "inbox") {
       page = (
         <div className="page">
           <p>{t("common.noScan")}</p>
@@ -71,35 +89,49 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-          page = <Ask key={scan?.id} />;
+          page = <Ask key={`${scan?.id}-${route.query ?? ""}`} />;
           break;
         case "report":
           page = <Report />;
+          break;
+        case "inbox":
+          page = <Inbox />;
           break;
         default:
           page = <Dashboard />;
       }
     }
-    content = (
-      <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
-        <Sidebar current={route.name} />
-        <SidebarShowButton />
-        <main className="main" id="main">
-          {page}
-        </main>
-      </div>
-    );
+    if (isMobile) {
+      content = (
+        <div className="mobile-shell">
+          <MobileHeader />
+          <main className="mobile-main" id="main">
+            {page}
+          </main>
+        </div>
+      );
+    } else {
+      content = (
+        <div className={`app${collapsed ? " sidebar-hidden" : ""}`}>
+          <Sidebar current={route.name} />
+          <SidebarShowButton />
+          <main className="main" id="main">
+            {page}
+          </main>
+        </div>
+      );
+    }
   }
 
   return (
     <>
-      {demo && ready && (
+      {demo && ready && route.name !== "widget" && (
         <div className="demo-banner">
           <ErrorBanner tone="info" action={<button className="link-button" onClick={() => switchDemo(false)}>{t("common.exitDemo")}</button>}>{t("common.demo")}</ErrorBanner>
         </div>
       )}
       {content}
-      {!app.loadFailed && <AjarDock />}
+      {!isMobile && !app.loadFailed && route.name !== "widget" && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
     </>
   );
@@ -108,7 +140,9 @@ function Shell() {
 export default function App() {
   return (
     <AppProvider>
-      <Shell />
+      <InboxProvider>
+        <Shell />
+      </InboxProvider>
     </AppProvider>
   );
 }

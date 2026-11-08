@@ -57,7 +57,7 @@ test("published UI imports, compares, explains and checks consent through FastAP
   await page.locator(".score-meta").getByText("High severity").waitFor();
   await page.locator(".ajar-score").getByText("High severity").waitFor();
   await page.locator(".fix-first-action").getByText(/administration settings/i).waitFor();
-  await page.locator(".fix-first-action a").click();
+  await page.locator(".fix-first-action a.primary").click();
   await page.getByRole("heading", {name:"Unencrypted remote login"}).waitFor();
 
   await page.goto(origin + "/#/ask");

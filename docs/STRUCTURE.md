@@ -71,8 +71,9 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | `pages/Scan.tsx` | Live scan with confirmation, import XML files |
 | `pages/Ask.tsx` | Optional Q&A assistant |
 | `pages/Report.tsx` | FR-14 one-page report (print / save as PDF) for the user's IT supplier |
+| `pages/Inbox.tsx`, `state/Inbox.tsx` | Notification inbox (desktop + phone): messages derived from history and scan diffs; read checkboxes kept in localStorage |
 | `lib/references.ts` | CIS Controls v8 / OWASP IoT Top 10 references per finding code (display only) |
-| `components/` | ScoreBadge, FindingCard, DeviceCard, ConfirmScanDialog, HistoryChart, DiffList, LanguageToggle, ErrorBanner |
+| `components/` | ScoreBadge, FindingCard, DeviceCard, ConfirmScanDialog, HistoryChart, DiffList, LanguageToggle, ErrorBanner, AskAiButton (opens Ask; on phones explains chat is desktop-only), AjarWidget (phone widget, also `#/widget`), MobileHeader (logo + inbox bell) |
 | `i18n/` | `ro.json`, `en.json` |
 | `api/` | Typed client for `/api/*` |
 | `styles/global.css` | Accessibility basics (16 px text, focus outlines) |

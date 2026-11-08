@@ -1,21 +1,39 @@
 // Left sidebar: room for Ajar at the top (Ajar itself lives in AjarDock and stays put when the
 // sidebar hides), then "new scan", navigation, recent scans, language and the hide button.
 import { formatDate } from "../i18n";
+import { useIsMobile } from "../lib/useIsMobile";
 import { href, type Route } from "../router";
 import { useApp } from "../state/AppState";
-import { IconAsk, IconDashboard, IconDevices, IconHistory, IconPlus, IconSidebar } from "./Icons";
+import { useInbox } from "../state/Inbox";
+import {
+  IconAsk,
+  IconBell,
+  IconDashboard,
+  IconDevices,
+  IconHistory,
+  IconPlus,
+  IconSidebar,
+} from "./Icons";
 import LanguageToggle from "./LanguageToggle";
 
 const NAV = [
   { route: { name: "dashboard" } as Route, key: "nav.dashboard", icon: <IconDashboard /> },
   { route: { name: "devices" } as Route, key: "nav.devices", icon: <IconDevices /> },
   { route: { name: "history" } as Route, key: "nav.history", icon: <IconHistory /> },
+  { route: { name: "inbox" } as Route, key: "nav.inbox", icon: <IconBell /> },
   { route: { name: "ask" } as Route, key: "nav.ask", icon: <IconAsk /> },
 ];
 
-export default function Sidebar({ current }: { current: Route["name"] }) {
-  const { t, lang, history, scan, selectScan, collapsed, setCollapsed } = useApp();
+export default function Sidebar({
+  current,
+}: {
+  current: Route["name"];
+}) {
+  const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications } = useApp();
+  const isMobile = useIsMobile();
+  const { unread } = useInbox();
   const active = current === "device" ? "devices" : current === "home" ? "dashboard" : current;
+  const navItems = NAV.filter((item) => !(isMobile && item.route.name === "ask"));
 
   return (
     <aside id="sidebar" className={`sidebar${collapsed ? " hidden" : ""}`} aria-label={t("nav.label")} aria-hidden={collapsed}>
@@ -28,12 +46,41 @@ export default function Sidebar({ current }: { current: Route["name"] }) {
       </a>
 
       <nav className="sidebar-nav">
-        {NAV.map((item) => (
+        {navItems.map((item) => (
           <a key={item.key} href={href(item.route)} className={`sidebar-item${active === item.route.name ? " active" : ""}`} aria-current={active === item.route.name ? "page" : undefined}>
             {item.icon}
             {t(item.key)}
+            {item.route.name === "inbox" && unread > 0 && (
+              <span className="inbox-badge" aria-label={t("inbox.unreadCount", { count: unread })}>{unread}</span>
+            )}
           </a>
         ))}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
+          <button
+            type="button"
+            className={`sidebar-item${notificationsEnabled ? " active" : ""}`}
+            onClick={() => void enableNotifications()}
+            disabled={notificationsEnabled}
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: 0,
+              textAlign: "left",
+              cursor: notificationsEnabled ? "default" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+            title={notificationsEnabled ? t("desktop.notifyEnabledShort") : t("desktop.notifyEnable")}
+          >
+            <IconBell />
+            <span>
+              {notificationsEnabled
+                ? "✓ " + t("desktop.notifyEnabledShort")
+                : t("desktop.notifyEnable")}
+            </span>
+          </button>
+        </div>
       </nav>
 
       {history.length > 0 && (
