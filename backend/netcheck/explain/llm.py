@@ -38,7 +38,7 @@ from netcheck import config
 
 from .evidence import (
     EvidenceDevice, EvidenceFinding, EvidencePort, ScanEvidence, answer_options, clean,
-    finding_contexts, mentioned_ips, score_text,
+    finding_contexts, mentioned_ips, mentioned_ports, score_text,
 )
 
 MAX_QUESTION = 500
@@ -300,6 +300,29 @@ def _free_answer(client: "LLMClient", question: str, evidence: ScanEvidence, lan
     return None if reply is None else plain_text(reply)
 
 
+_CVE = re.compile(r"\bCVE[-\s]?\d{4}", re.I)
+_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_PHONE = re.compile(r"(?<![\w.:/])\+?\d[\d ().-]{6,}\d(?![\w.:/])")
+
+
+def invents_evidence(reply: str, question: str, evidence: ScanEvidence) -> bool:
+    """NFR-06: True if a written answer names an IP, port, CVE or phone number the scan does not show.
+
+    A port the user asked about may be repeated ("port 9100 is not open in this scan").
+    """
+    known_ips = {d.ip for d in evidence.devices} | {f.ip for f in evidence.findings}
+    known_ports = {p.port for d in evidence.devices for p in d.open_ports}
+    known_ports |= {f.port for f in evidence.findings if f.port is not None}
+    if mentioned_ips(reply) - known_ips or mentioned_ports(reply) - known_ports - mentioned_ports(question):
+        return True
+    if _CVE.search(reply):
+        return True  # the scan never contains CVE identifiers
+    digits_only = _DATE.sub(" ", reply)
+    for ip in mentioned_ips(reply):
+        digits_only = digits_only.replace(ip, " ")
+    return any(sum(ch.isdigit() for ch in match.group()) >= 7 for match in _PHONE.finditer(digits_only))
+
+
 _FALLBACK: dict = {
     "unavailable": {
         "ro": "Asistentul AI nu este disponibil acum. Explicațiile și pașii de la fiecare problemă sunt mereu afișați.",
@@ -414,9 +437,9 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
     model_down = False
     if config.LLM_FREE_ANSWERS and client.enabled:
         text = _free_answer(client, question, evidence, lang, history)
-        if text:
+        if text and not invents_evidence(text, question, evidence):
             return Answer(text, "llm_free", grounded=True)
-        # Empty reply: answer with the verified scan records below. Unreachable: don't call it twice.
+        # Empty or ungrounded reply: answer with the verified scan records below. Unreachable: don't call it twice.
         model_down = text is None
     bare = question.rstrip(" .!?")
     if _SCORE_QUESTION.fullmatch(bare):

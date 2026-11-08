@@ -31,15 +31,15 @@ export default function DeviceCard({ risk, open = false }: { risk: DeviceRisk; o
             {unknown ? t("device.unknownTitle") : deviceName(device.device_type)}
             {unknown && <span className="tag">{t("device.unknownTag")}</span>}
           </span>
-          <span className="muted">{device.vendor ?? device.hostname ?? t("device.noVendor")}</span>
+          <span className="muted">
+            {[device.vendor, device.hostname].filter(Boolean).join(" · ") || t("device.noVendor")}
+          </span>
+          <span className="muted mono">IP {device.ip} · MAC {device.mac_masked ?? "—"}</span>
         </span>
         {worst ? <SeverityBadge severity={worst} /> : <span className="chip sev-ok">✓ {t("device.ok")}</span>}
         <span className="device-points muted">{points > 0 ? `−${points}` : "0"}</span>
       </summary>
       <div className="device-details">
-        <span>IP {device.ip}</span>
-        <span>MAC {device.mac_masked ?? "—"}</span>
-        {device.hostname && <span>{t("device.hostname")} {device.hostname}</span>}
         <span>
           {t("device.ports")}{" "}
           {device.ports.length ? device.ports.map((port) => `${port.port}/${port.service ?? "?"}`).join(", ") : "—"}

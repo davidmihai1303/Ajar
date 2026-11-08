@@ -195,7 +195,7 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_API_KEY` | empty | only if the endpoint needs one; never committed |
 | `LLM_MODEL` | empty | model name sent to the endpoint |
 | `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
-| `LLM_FREE_ANSWERS` | `1` | Ask shows the model's own written answer, built from the scan facts (not verified against the scan, NFR-06). `0` = only verified scan records. Falls back to the record-based answer if the model replies with nothing |
+| `LLM_FREE_ANSWERS` | `1` | Ask shows the model's own written answer, built from the scan facts. A reply naming an IP, port, CVE or phone number the scan does not show is discarded for the verified answer (NFR-06). `0` = only verified scan records. Falls back to the record-based answer if the model replies with nothing |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
 

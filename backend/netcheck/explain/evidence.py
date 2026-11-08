@@ -64,6 +64,13 @@ def clean(value: str, limit: int = 120) -> str:
     return " ".join(_MAC.sub("[MAC]", text).split())[:limit]
 
 
+def mentioned_ports(text: str) -> set[int]:
+    """Port numbers a text names: "port 80", "porturile 80, 443", "22/tcp", "192.168.1.1:80"."""
+    ports = {int(number) for match in _PORT_LIST.finditer(text) for number in re.findall(r"\d+", match.group(1))}
+    ports |= {int(number) for number in _SERVICE_PORT.findall(text)}
+    return ports | {int(match.group(2)) for match in _ENDPOINT.finditer(text)}
+
+
 def mentioned_ips(question: str) -> set[str]:
     addresses = set(_IP.findall(question))
     for match in _IPV6.finditer(question):

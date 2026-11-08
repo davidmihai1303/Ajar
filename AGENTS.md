@@ -98,7 +98,8 @@ gitleaks detect --source . --no-banner           # must be clean
 - Two Ask modes (`LLM_FREE_ANSWERS`, team decision):
   - **Free answers (default, `1`):** the model writes the answer from the scan facts. Facts are ordered
     score → findings (most severe first) → devices and ports and capped (`MAX_FACT_CHARS`). The reply is
-    passed through `plain_text()` (the chat shows plain text, so Markdown is removed). Empty reply →
+    passed through `plain_text()` (the chat shows plain text, so Markdown is removed). Empty reply, or a
+    reply naming an IP, port, CVE or phone number the scan does not show (`invents_evidence`, NFR-06) →
     record-based answer; unreachable model → "not available", without a second model call.
   - **Record-only (`0`):** the model only selects IDs from the records offered for that question and
     Python renders the answer. Unknown IDs and extra keys are dropped; over-selection keeps the most

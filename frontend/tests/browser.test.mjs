@@ -512,3 +512,12 @@ test("an Ask link sends its question once, even after Back", async (t) => {
   assert.deepEqual(asked, ["Is my router safe?"]);
   assert.equal(await page.locator(".bubble-user").count(), 1);
 });
+
+test("the device list shows IP, masked MAC, maker and type without opening a row", async (t) => {
+  const page = await open(t, "devices", { scan: risky, onApi: explainReply });
+  const row = page.locator(".device-row", { hasText: "TP-Link" });
+  await row.waitFor();
+  const text = await row.locator("summary").innerText();
+  assert.match(text, /Router/);
+  assert.match(text, /IP 192\.168\.1\.1 · MAC 50:C7:BF:xx:xx:xx/);
+});

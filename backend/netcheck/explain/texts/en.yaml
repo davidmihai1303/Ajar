@@ -47,7 +47,7 @@ FTP_CLEARTEXT:
     - "For private transfers, choose an encrypted option such as SFTP."
 HTTP_ADMIN_CLEARTEXT:
   title: "A settings page uses plain HTTP"
-  explanation: "The scan found a page that looks like a settings or login page. A password entered over plain HTTP could be read on the network."
+  explanation: "The scan found a page that looks like a settings or login page. It is not encrypted (plain HTTP), so a password typed there could be read by others on the network."
   fixes:
     - "Open the device’s administration settings."
     - "Enable HTTPS if available."
