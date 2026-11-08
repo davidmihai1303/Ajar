@@ -16,7 +16,7 @@ agent:
 	python3 scanner/agent.py serve
 
 gitleaks:
-	gitleaks detect --source . --no-banner
+	scripts/gitleaks.sh
 
 demo:
 	./demo.sh

@@ -24,3 +24,5 @@ frontend/dist/
 .idea/
 .vscode/
 frontend/*.tsbuildinfo
+# pinned dev tools downloaded by scripts/ (gitleaks)
+.tools/

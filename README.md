@@ -121,6 +121,8 @@ Smarthack/
 ├── SmartHack_Setup.md         existing distributed LLM setup (llama-server on the MSI)
 ├── docker-compose.yml         the app container (backend + built frontend)
 ├── demo.sh                    demo laptop: app + local Qwen + scanner agent in one command
+├── scripts/gitleaks.sh        secret scan with a pinned, checksum-verified gitleaks (live check 7)
+├── .gitleaksignore            gitleaks false positives, each with its reason
 ├── .env.example               configuration names only, no values
 ├── .gitignore                 .env, .api_key, data/, input/ are never committed
 │
@@ -367,7 +369,7 @@ after ten idle minutes or when the local assistant is turned off.
 
 | Requirement | How it is met |
 |---|---|
-| **NFR-01 Secrets** | Configuration only through environment variables; `.env` and `.api_key` are git-ignored. Checked live with `gitleaks detect` |
+| **NFR-01 Secrets** | Configuration only through environment variables; `.env` and `.api_key` are git-ignored. Checked live with `scripts/gitleaks.sh` (gitleaks 8.30.1, pinned and checksum-verified, whole git history; false positives with their reason in `.gitleaksignore`) |
 | **NFR-02 Privacy** | MAC addresses masked in all output (`50:C7:BF:xx:xx:xx`); history stored only locally; one-click delete |
 | **NFR-03 Hostile input** | `defusedxml` (no external entities), file size limit, banners and titles treated as untrusted text and escaped in the UI |
 | **NFR-04 Least privilege** | Only `netcheck-nmap` runs as root, and only during a scan. The agent, the API and the UI run as normal users; the container runs as a non-root user |
@@ -447,7 +449,7 @@ Details: [`lab/README.md`](lab/README.md).
 | 4 | Guardrail | `agent.py scan --target 8.8.8.8 --confirm` and `--target <venue subnet>` → refused; without `--confirm` → refused |
 | 5 | Broken file | Analyse `V7_broken.xml` → clear error, no crash |
 | 6 | History before/after | History page: our lab, 0 → 75 |
-| 7 | No secrets | `gitleaks detect --source .` |
+| 7 | No secrets | `scripts/gitleaks.sh` (same as `gitleaks detect --source . --no-banner`) |
 
 ---
 

@@ -288,6 +288,9 @@ summary() {
 cmd_start() {
     preflight
     check_scanner
+    # Fetch the pinned gitleaks while online, so live check 7 also works offline.
+    scripts/gitleaks.sh version >/dev/null 2>&1 ||
+        warn "gitleaks could not be downloaded; run scripts/gitleaks.sh once while online."
     ensure_model
     ensure_images
     stop_other_stacks
@@ -336,12 +339,8 @@ cmd_check() {
     fi
     say "Scanner tests"
     python3 -m unittest discover -s scanner/tests 2>&1 | tail -n 1 || failed=1
-    say "Secrets (gitleaks)"
-    if command -v gitleaks >/dev/null; then
-        gitleaks detect --source . --no-banner || failed=1
-    else
-        warn "gitleaks is not installed on this laptop (live check 7 needs it)."
-    fi
+    say "Secrets (gitleaks, whole git history)"
+    scripts/gitleaks.sh || failed=1
     say "Working tree"
     if [[ -n $(git status --porcelain --untracked-files=no 2>/dev/null) ]]; then
         warn "Uncommitted changes: the demo runs code that is not in git."
