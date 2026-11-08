@@ -25,10 +25,11 @@ assistant** unloads it immediately. The app, built-in guidance and CSV export wo
 machine without GPU support.
 
 To grade a folder offline, put the XML files in `input/test_set/` and run the following
-command from the extracted directory. Both CSVs appear in `input/results/`.
+command from the extracted directory while Ajar is running. It uses the running app's
+Linux account. Both CSVs appear in `input/results/`.
 
 ```bash
-docker compose -f docker-compose.yml -f compose.qwen.yml run --rm --no-deps --pull never \
+docker compose -f docker-compose.yml -f compose.qwen.yml exec -T \
   app netcheck analyze /data/input/test_set --out /data/input/results
 ```
 

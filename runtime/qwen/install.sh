@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $(uname -sm) == "Linux x86_64" ]] || { echo "This bundle requires Linux x86-64" >&2; exit 1; }
+install -d -m 0700 data
 source runtime/qwen/versions.env
 parts=$(cd .. && pwd)
 verify() { (cd "$parts" && grep "  $1" SHA256SUMS | sha256sum --check --quiet); }
@@ -10,7 +11,7 @@ verify 'ajar-setup.tar.gz$'
 verify 'images.part.'
 cat "$parts"/images.part.* | docker load
 docker image inspect --format '{{.Id}}' ajar/app:offline ajar/llama:b12182 | diff - image-ids
-mkdir -p models data/qwen
+mkdir -p models
 if (cd models && echo "$MODEL_SHA  $MODEL_FILE" | sha256sum --check --status); then
     echo "Qwen weights already verified"
 elif verify 'model.part.'; then

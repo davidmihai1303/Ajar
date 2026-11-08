@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 export AJAR_UID="$(id -u)" AJAR_GID="$(id -g)"
 umask 077
-mkdir -p data/qwen input models
-chmod 700 data/qwen
+install -d -m 0700 data data/qwen
+mkdir -p input models
 exec 9>data/qwen/launch.lock
 flock 9
 if [[ ! -s data/qwen/router.key ]]; then
