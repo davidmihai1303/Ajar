@@ -1,0 +1,4 @@
+# Known false positives for gitleaks (scripts/gitleaks.sh). One fingerprint per line, each with its reason.
+# SmartHack_Setup.md: the curl example uses the placeholder "PASTE_KEY_HERE", not a key.
+32f07697922a00b1970656589b2b8f431d6048ef:SmartHack_Setup.md:curl-auth-header:352
+SmartHack_Setup.md:curl-auth-header:352

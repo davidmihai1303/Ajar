@@ -1,4 +1,4 @@
-.PHONY: up down test analyze-validation agent gitleaks
+.PHONY: up down test analyze-validation agent gitleaks demo demo-stop demo-check
 
 up:
 	docker compose up -d --build
@@ -16,4 +16,13 @@ agent:
 	python3 scanner/agent.py serve
 
 gitleaks:
-	gitleaks detect --source . --no-banner
+	scripts/gitleaks.sh
+
+demo:
+	./demo.sh
+
+demo-stop:
+	./demo.sh stop
+
+demo-check:
+	./demo.sh check
