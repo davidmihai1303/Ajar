@@ -312,3 +312,47 @@ def test_same_request_is_cached():
     b = personalize(client, PRINTER, BASE, "en")
     assert a.source == "llm" and a == b and len(seen) == 1
     assert seen[0]["temperature"] == 0 and seen[0]["response_format"] == {"type": "json_object"}
+
+
+# --------------------------------------------------------------------------- LLM_FREE_ANSWERS (opt-in)
+
+def test_free_answers_are_off_by_default():
+    seen = []
+    answer = ask(fake_llm("Your printer is totally fine.", seen=seen), "Tell me about my network.", EVIDENCE, "en")
+    assert answer.source == "fallback" and "totally fine" not in answer.text
+
+
+@pytest.mark.parametrize("lang,language", [("en", "English"), ("ro", "Romanian")])
+def test_free_answer_shows_model_text_written_from_scan_facts(monkeypatch, lang, language):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    reply = "Your HP printer accepts raw print jobs on port 9100. Turn that off if you don't use it."
+    answer = ask(fake_llm("<think>x</think>" + reply, seen=seen), "hi, is my printer ok?", EVIDENCE, lang)
+    assert answer.source == "llm_free" and answer.text == reply
+    system, user = (m["content"] for m in seen[0]["messages"])
+    assert language in system and "[192.168.1.10:9100]" in user and "office-printer" in user
+
+
+def test_free_answer_never_sends_mac_or_page_title(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    mac = "02:00:00:00:00:01"
+    port = replace(EVIDENCE.devices[0].open_ports[0], title="Raw untrusted web title")
+    evidence = replace(EVIDENCE, devices=(replace(EVIDENCE.devices[0], open_ports=(port,)),))
+    seen = []
+    ask(fake_llm("ok", seen=seen), "Is " + mac + " safe?", evidence, "en")
+    prompt = seen[0]["messages"][1]["content"]
+    assert mac not in prompt and "Raw untrusted web title" not in prompt
+
+
+@pytest.mark.parametrize("reply", ["", "   ", httpx.ReadTimeout("slow")])
+def test_free_answer_falls_back_to_scan_records(monkeypatch, reply):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    answer = ask(fake_llm(reply), "What problems do I have?", EVIDENCE, "en")
+    assert answer.source == "scan" and "[192.168.1.10:9100]" in answer.text
+
+
+def test_free_answer_timeout_does_not_call_the_model_twice(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    answer = ask(fake_llm(httpx.ReadTimeout("slow"), seen=seen), "Is my printer ok?", EVIDENCE, "en")
+    assert answer.source == "fallback" and "not available" in answer.text and len(seen) == 1
