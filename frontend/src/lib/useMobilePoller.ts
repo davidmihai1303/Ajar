@@ -8,7 +8,7 @@ import { useApp } from "../state/AppState";
  * Triggers mobile notifications, haptic vibration and audio alerts when threats are found.
  */
 export function useMobilePoller(enabled = true, intervalMs = 8000) {
-  const { scan, selectScan, t } = useApp();
+  const { scan, selectScan, t, notificationsEnabled } = useApp();
   const lastScanIdRef = useRef<string | null>(scan?.id ?? null);
 
   useEffect(() => {
@@ -33,18 +33,28 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
           // New scan detected on server!
           await selectScan(latest.id);
 
+          if (!notificationsEnabled) return;
+
           // If notifications are permitted, trigger mobile notification
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            const score = latest.score ?? "—";
-            new Notification(t("desktop.scanCompleted", { score }), {
-              body: t("mobile.notifySubtitle"),
-              icon: "/favicon.ico",
-            });
+            try {
+              const score = latest.score ?? "—";
+              new Notification(t("desktop.scanCompleted", { score }), {
+                body: t("mobile.notifySubtitle"),
+                icon: "/favicon.ico",
+              });
+            } catch {
+              /* ignore mobile Notification constructor restriction */
+            }
           }
 
           // Trigger mobile vibration
           if (typeof navigator !== "undefined" && navigator.vibrate) {
-            navigator.vibrate([200, 100, 200, 100, 400]);
+            try {
+              navigator.vibrate([200, 100, 200, 100, 400]);
+            } catch {
+              /* ignore */
+            }
           }
 
           // Play alert chime
@@ -59,5 +69,5 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
     return () => {
       if (timer) window.clearInterval(timer);
     };
-  }, [enabled, intervalMs, selectScan, t]);
+  }, [enabled, intervalMs, notificationsEnabled, selectScan, t]);
 }

@@ -123,16 +123,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
     store.set("ajar.ai", value ? "yes" : "no");
   }, []);
 
+  const enablingNotifRef = useRef(false);
+
   const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
+    const currentPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    if (currentPerm === "granted") {
+      store.set("ajar.notifications", "yes");
+      store.set("ajar.browserPerm", "granted");
+      return true;
+    }
     const saved = store.get("ajar.notifications");
-    if (saved === "yes") return true;
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") return true;
-    return false;
+    const lastPerm = store.get("ajar.browserPerm");
+    // If permissions were changed/revoked in the browser since activation, reset button state.
+    if (lastPerm && lastPerm !== currentPerm) {
+      store.set("ajar.notifications", "no");
+      store.set("ajar.browserPerm", currentPerm);
+      return false;
+    }
+    return saved === "yes";
   });
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
+    let permStatus: PermissionStatus | null = null;
+    const handleChange = () => {
+      if (!permStatus || enablingNotifRef.current) return;
+      const currentPerm = typeof Notification !== "undefined" ? Notification.permission : permStatus.state;
+      store.set("ajar.browserPerm", currentPerm);
+      if (permStatus.state === "granted") {
+        store.set("ajar.notifications", "yes");
+        setNotificationsEnabledState(true);
+      } else {
+        store.set("ajar.notifications", "no");
+        setNotificationsEnabledState(false);
+      }
+    };
+    navigator.permissions
+      .query({ name: "notifications" })
+      .then((status) => {
+        permStatus = status;
+        status.addEventListener?.("change", handleChange);
+      })
+      .catch(() => undefined);
+    return () => {
+      permStatus?.removeEventListener?.("change", handleChange);
+    };
+  }, []);
+
   const enableNotifications = useCallback(async () => {
+    enablingNotifRef.current = true;
+
+    // Call requestPermission first to preserve the browser's user-activation gesture.
+    const permPromise =
+      typeof Notification !== "undefined" && Notification.permission === "default"
+        ? Notification.requestPermission().catch(() => "default" as NotificationPermission)
+        : null;
+
     setNotificationsEnabledState(true);
     store.set("ajar.notifications", "yes");
+    store.set("ajar.browserPerm", typeof Notification !== "undefined" ? Notification.permission : "unsupported");
 
     if (typeof navigator !== "undefined" && navigator.vibrate) {
       try {
@@ -143,31 +192,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     playAlertChime();
 
-    if (typeof Notification !== "undefined") {
-      try {
-        if (Notification.permission === "default") {
-          await new Promise<void>((resolve) => {
-            try {
-              const res = Notification.requestPermission(() => resolve());
-              if (res && typeof res.then === "function") res.then(() => resolve()).catch(() => resolve());
-            } catch {
-              resolve();
-            }
+    try {
+      if (permPromise) {
+        await permPromise;
+      }
+      if (typeof Notification !== "undefined") {
+        store.set("ajar.browserPerm", Notification.permission);
+        if (Notification.permission === "granted") {
+          new Notification("Ajar", {
+            body: t("mobile.notifyActiveBody"),
+            icon: "/favicon.ico",
           });
         }
-        if (Notification.permission === "granted") {
-          try {
-            new Notification("Ajar", {
-              body: t("mobile.notifyActiveBody"),
-              icon: "/favicon.ico",
-            });
-          } catch {
-            /* ServiceWorker / mobile restriction fallback */
-          }
-        }
-      } catch {
-        /* Ignore permission rejection */
       }
+    } catch {
+      /* ServiceWorker / mobile restriction or permission rejection fallback */
+    } finally {
+      window.setTimeout(() => {
+        enablingNotifRef.current = false;
+      }, 500);
     }
   }, [t]);
 
