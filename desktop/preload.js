@@ -6,12 +6,4 @@ contextBridge.exposeInMainWorld("ajarDesktop", {
   isDesktop: true,
   notify: (notice) => ipcRenderer.send("ajar:notify", notice),
   setLang: (lang) => ipcRenderer.send("ajar:lang", lang),
-  onToast: (callback) => {
-    const listener = (_event, notice) => callback(notice);
-    ipcRenderer.on("ajar:toast", listener);
-    ipcRenderer.send("ajar:toast-ready");
-    return () => ipcRenderer.removeListener("ajar:toast", listener);
-  },
-  toastClosed: () => ipcRenderer.send("ajar:toast-closed"),
-  openMain: () => ipcRenderer.send("ajar:open-main"),
 });

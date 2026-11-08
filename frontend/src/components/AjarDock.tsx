@@ -29,7 +29,7 @@ export default function AjarDock() {
         {!ready ? (
           <span className="muted">{t("common.loading")}</span>
         ) : scanning ? (
-          <span className="muted">{t("scan.running.short")}</span>
+          <span className="visually-hidden">{t("scan.running.title")}</span>
         ) : score === null ? (
           <>
             <span className="serif ajar-score-unknown">{t("score.unknown")}</span>

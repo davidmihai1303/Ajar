@@ -1,7 +1,6 @@
 // Notification inbox: every message has a "read" checkbox; the list can show only unread messages.
 import { useState } from "react";
 import { formatDate } from "../i18n";
-import { useIsMobile } from "../lib/useIsMobile";
 import { href, navigate } from "../router";
 import { useApp } from "../state/AppState";
 import { useInbox, type InboxItem } from "../state/Inbox";
@@ -19,7 +18,6 @@ const ICON: Record<InboxItem["kind"], JSX.Element> = {
 export default function Inbox() {
   const { t, lang, selectScan } = useApp();
   const { items, unread, isRead, setRead, markAll } = useInbox();
-  const isMobile = useIsMobile();
   const [onlyUnread, setOnlyUnread] = useState(false);
   const shown = onlyUnread ? items.filter((item) => !isRead(item.id)) : items;
 
@@ -44,7 +42,7 @@ export default function Inbox() {
   const open = async (item: InboxItem) => {
     setRead(item.id, true);
     await selectScan(item.scanId).catch(() => undefined);
-    if (item.ip && !isMobile && item.kind !== "resolved") navigate({ name: "device", ip: item.ip });
+    if (item.ip && item.kind !== "resolved") navigate({ name: "device", ip: item.ip });
     else navigate({ name: "dashboard" });
   };
 

@@ -33,7 +33,7 @@ export default function Sidebar({
 }: {
   current: Route["name"];
 }) {
-  const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications } = useApp();
+  const { t, lang, history, scan, selectScan, collapsed, setCollapsed, notificationsEnabled, enableNotifications, notificationProblem } = useApp();
   const isMobile = useIsMobile();
   const { unread } = useInbox();
   const [downloadOpen, setDownloadOpen] = useState(false);
@@ -92,6 +92,7 @@ export default function Sidebar({
                 : t("desktop.notifyEnable")}
             </span>
           </button>
+          {notificationProblem && <p className="muted notify-problem" role="status">{t(`desktop.notifyProblem.${notificationProblem}`)}</p>}
         </div>
       </nav>
 

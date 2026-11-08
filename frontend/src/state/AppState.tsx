@@ -5,7 +5,7 @@ import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } 
 import { makeT, type TFunction } from "../i18n";
 import { playAlertChime } from "../lib/audioAlert";
 import { desktopBridge, type AjarNotice } from "../lib/desktop";
-import { assessment, previousComparable } from "../lib/scan";
+import { previousComparable } from "../lib/scan";
 import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
@@ -66,10 +66,9 @@ interface AppState {
   openDialog: () => () => void;
   notificationsEnabled: boolean;
   enableNotifications: () => Promise<void>;
-  /** Tell the user something: Ajar popup (desktop app or desktop browser), OS notification, chime. */
-  notify: (notice: Omit<AjarNotice, "id">) => void;
-  toast: AjarNotice | null;
-  dismissToast: () => void;
+  notificationProblem: "denied" | "unsupported" | null;
+  /** Tell the user something: a normal system notification with Ajar's picture, and a chime. */
+  notify: (notice: AjarNotice) => void;
   placement: AjarPlacement;
   anchor: AjarAnchor | null;
   setAnchor: (value: AjarAnchor | null) => void;
@@ -137,29 +136,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     store.set("ajar.ai", value ? "yes" : "no");
   }, []);
 
-  const enablingNotifRef = useRef(false);
-  const [toast, setToast] = useState<AjarNotice | null>(null);
-  const dismissToast = useCallback(() => setToast(null), []);
 
-  // One place for every notification. In the desktop app Ajar pops up in the corner of the screen
-  // (even when the window is in the tray); in a desktop browser he pops up in the page; the OS
-  // notification is kept for a hidden tab or a phone.
-  const notify = useCallback((notice: Omit<AjarNotice, "id">) => {
-    const full: AjarNotice = { ...notice, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+  // One place for every notification: always the system's own, with Ajar's picture as the icon.
+  const notify = useCallback((notice: AjarNotice) => {
     playAlertChime();
     const bridge = desktopBridge();
     if (bridge) {
-      bridge.notify(full);
+      bridge.notify(notice);
       return;
     }
-    const phone = onPhone();
-    if (!phone) setToast(full);
-    if ((phone || document.hidden) && typeof Notification !== "undefined" && Notification.permission === "granted") {
-      try {
-        new Notification(full.title, { body: full.body, icon: "/ajar-192.png" });
-      } catch {
-        /* some phones only allow notifications from a service worker */
-      }
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    try {
+      new Notification(notice.title, { body: notice.body, icon: "/ajar-192.png" });
+    } catch {
+      /* some phones only allow notifications from a service worker */
     }
   }, []);
 
@@ -167,39 +157,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     desktopBridge()?.setLang(lang);
   }, [lang]);
 
-  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
-    const currentPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
-    if (currentPerm === "granted") {
-      store.set("ajar.notifications", "yes");
-      store.set("ajar.browserPerm", "granted");
-      return true;
-    }
-    const saved = store.get("ajar.notifications");
-    const lastPerm = store.get("ajar.browserPerm");
-    // If permissions were changed/revoked in the browser since activation, reset button state
-    // (phones only: on a computer Ajar's popup works without the browser's permission).
-    if (lastPerm && lastPerm !== currentPerm && onPhone()) {
-      store.set("ajar.notifications", "no");
-      store.set("ajar.browserPerm", currentPerm);
-      return false;
-    }
-    return saved === "yes";
-  });
+  // "Active" only when a notification can really appear: the desktop app, or browser permission.
+  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(
+    () => desktopBridge() !== null || (typeof Notification !== "undefined" && Notification.permission === "granted"),
+  );
+  const [notificationProblem, setNotificationProblem] = useState<"denied" | "unsupported" | null>(null);
 
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
+    if (desktopBridge() || typeof navigator === "undefined" || !navigator.permissions?.query) return;
     let permStatus: PermissionStatus | null = null;
     const handleChange = () => {
-      if (!permStatus || enablingNotifRef.current) return;
-      const currentPerm = typeof Notification !== "undefined" ? Notification.permission : permStatus.state;
-      store.set("ajar.browserPerm", currentPerm);
-      if (permStatus.state === "granted") {
-        store.set("ajar.notifications", "yes");
-        setNotificationsEnabledState(true);
-      } else if (onPhone()) {
-        store.set("ajar.notifications", "no");
-        setNotificationsEnabledState(false);
-      }
+      if (!permStatus) return;
+      setNotificationsEnabledState(permStatus.state === "granted");
+      if (permStatus.state === "granted") setNotificationProblem(null);
     };
     navigator.permissions
       .query({ name: "notifications" })
@@ -214,18 +184,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const enableNotifications = useCallback(async () => {
-    enablingNotifRef.current = true;
-
-    // Call requestPermission first to preserve the browser's user-activation gesture.
-    const permPromise =
-      typeof Notification !== "undefined" && Notification.permission === "default"
+    const bridge = desktopBridge();
+    const supported = typeof Notification !== "undefined";
+    // Ask first, to keep the browser's user-activation gesture.
+    const asked =
+      !bridge && supported && Notification.permission === "default"
         ? Notification.requestPermission().catch(() => "default" as NotificationPermission)
         : null;
-
-    setNotificationsEnabledState(true);
-    store.set("ajar.notifications", "yes");
-    store.set("ajar.browserPerm", typeof Notification !== "undefined" ? Notification.permission : "unsupported");
-
     if (typeof navigator !== "undefined" && navigator.vibrate) {
       try {
         navigator.vibrate([100, 50, 100]);
@@ -233,29 +198,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     }
-
-    try {
-      if (permPromise) {
-        await permPromise;
-      }
-      if (typeof Notification !== "undefined") {
-        store.set("ajar.browserPerm", Notification.permission);
-        // Refused in the browser: a phone has no other way to notify, so it stays off there.
-        // On a computer Ajar's own popup does not need the browser's permission.
-        if (Notification.permission === "denied" && onPhone()) {
-          setNotificationsEnabledState(false);
-          store.set("ajar.notifications", "no");
-          return;
-        }
-      }
-      notify({ title: "Ajar", body: t(onPhone() ? "mobile.notifyActiveBody" : "desktop.testNotifyBody"), level: "clear" });
-    } catch {
-      /* ServiceWorker / mobile restriction or permission rejection fallback */
-    } finally {
-      window.setTimeout(() => {
-        enablingNotifRef.current = false;
-      }, 500);
+    if (asked) await asked;
+    if (!bridge && (!supported || Notification.permission !== "granted")) {
+      // A dismissed prompt ("default") stays off without a message: the user can simply ask again.
+      setNotificationsEnabledState(false);
+      setNotificationProblem(!supported ? "unsupported" : Notification.permission === "denied" ? "denied" : null);
+      return;
     }
+    setNotificationProblem(null);
+    setNotificationsEnabledState(true);
+    notify({ title: "Ajar", body: t(onPhone() ? "mobile.notifyActiveBody" : "desktop.testNotifyBody") });
   }, [notify, t]);
 
   useEffect(() => {
@@ -350,7 +302,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           /* the dashboard shows the same changes anyway */
         }
       }
-      notify({ title: t("desktop.scanCompleted", { score: next.score ?? "—" }), body, level: assessment(next) });
+      notify({ title: t("desktop.scanCompleted", { score: next.score ?? "—" }), body });
     },
     [notificationsEnabled, notify, t],
   );
@@ -489,9 +441,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openDialog,
     notificationsEnabled,
     enableNotifications,
+    notificationProblem,
     notify,
-    toast,
-    dismissToast,
     placement,
     anchor,
     setAnchor,
