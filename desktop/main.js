@@ -147,7 +147,8 @@ function createMainWindow() {
     icon: asset("icon.png"),
     backgroundColor: "#faf8f5",
     autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    // backgroundThrottling off: the window usually sits hidden in the tray and still watches for scans.
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
   });
   lockDown(mainWindow);
   mainWindow.webContents.on("did-fail-load", (_event, _code, _description, url, isMainFrame) => {

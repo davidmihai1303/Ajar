@@ -567,3 +567,44 @@ test("on a phone every dashboard link opens its own page and the Show me button 
   await page.evaluate(() => { location.hash = "#/ask"; });
   await page.waitForURL("**/#/dashboard");
 });
+
+for (const [permission, message] of [["denied", "Notifications are blocked."], ["default", null]]) {
+  test(`notifications stay off when permission is ${permission} after asking`, async (t) => {
+    const page = await open(t, "dashboard");
+    await page.addInitScript((value) => {
+      localStorage.setItem("ajar.notifications", "yes");
+      localStorage.setItem("ajar.browserPerm", value);
+      window.__shown = 0;
+      window.Notification = class { static permission = value; static requestPermission = async () => value; constructor() { window.__shown += 1; } };
+    }, permission);
+    await page.reload();
+    const enable = page.getByRole("button", { name: "Enable desktop notifications" });
+    await enable.waitFor();
+    await enable.click();
+    if (message) await page.getByText(message).waitFor();
+    assert.equal(await enable.isEnabled(), true);
+    assert.equal(await page.getByText("Notifications active").count(), 0);
+    assert.equal(await page.evaluate(() => window.__shown), 0);
+  });
+}
+
+test("on a phone the scan page does not jump when the phrase changes", async (t) => {
+  let finish;
+  const done = new Promise((resolve) => { finish = resolve; });
+  t.after(() => finish());
+  const page = await open(t, "scan", { async onApi(path) {
+    if (path === "/api/network") return { json: { ...network, allowlist: [network.subnet], address: "192.168.1.7" } };
+    if (path === "/api/scans") { await done; return { json: good }; }
+  } });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await page.getByRole("button", { name: "Scan this network" }).click();
+  await confirmNetwork(page);
+  await page.locator(".scan-word").waitFor();
+  const tops = await page.evaluate(() => ["Knocking on doors…", "Peeking through keyholes…", "Listening at doors…", "Counting the hinges…", "Looking for doors left ajar…",
+    "Bat la uși…", "Mă uit pe gaura cheii…", "Ascult la uși…", "Număr balamalele…", "Caut uși întredeschise…"].map((text) => {
+    document.querySelector(".scan-word").textContent = text;
+    return document.querySelector(".progress-track").getBoundingClientRect().top;
+  }));
+  assert.equal(new Set(tops).size, 1, tops.join());
+});

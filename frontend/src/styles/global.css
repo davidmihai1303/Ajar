@@ -181,7 +181,9 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .composer-net { display: flex; align-items: center; gap: 12px; color: var(--muted); }
 .composer-net .strong { color: var(--text); }
 .progress-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 20px; text-align: center; padding-top: calc(50vh - 40px); }
-.progress-title { font-size: 40px; }
+.progress-title { font-size: 40px; line-height: 1.25; }
+/* Room for two lines on phones, so the phrases can change without moving the page */
+@media (max-width: 768px) { .progress-title { min-height: 2.5em; } }
 .progress-track { width: 100%; max-width: 480px; height: 8px; background: #ede7df; border-radius: 999px; overflow: hidden; position: relative; }
 .progress-indeterminate { position: absolute; top: 0; bottom: 0; width: 35%; background: var(--oak); border-radius: 999px; animation: progress-slide 1.8s ease-in-out infinite; }
 @keyframes progress-slide { from { left: -35%; } to { left: 100%; } }
@@ -405,6 +407,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .download-steps code, .banner code { overflow-wrap: anywhere; }
 
 /* Rotating words while a scan runs */
+.notify-problem { margin: 4px 12px; }
 .scan-word { display: inline-block; animation: scan-word-in 0.35s ease-out; }
 @keyframes scan-word-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .scan-word { animation: none; } }

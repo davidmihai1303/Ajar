@@ -24,7 +24,7 @@ const readOpen = () => {
 };
 
 export default function Dashboard() {
-  const { t, lang, scan, history, setBubble, startScanFlow, notificationsEnabled, enableNotifications } = useApp();
+  const { t, lang, scan, history, setBubble, startScanFlow, notificationsEnabled, enableNotifications, notificationProblem } = useApp();
   const deviceName = useDeviceName();
   const [text, setText] = useState<Explanation | null>(null);
   const [diff, setDiff] = useState<ScanDiff | null>(null);
@@ -118,6 +118,7 @@ export default function Dashboard() {
           {notificationsEnabled ? "✓ " + t("mobile.notifyActive") : t("mobile.notifyEnable")}
         </button>
       )}
+      {isMobile && notificationProblem && <p className="muted" role="status">{t(`desktop.notifyProblem.${notificationProblem}`)}</p>}
 
       {isMobile && <AjarWidget />}
 
