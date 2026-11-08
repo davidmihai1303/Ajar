@@ -1,12 +1,10 @@
 // Bridge to the Ajar desktop app (Electron, desktop/preload.js). In a normal browser it is absent.
-import type { Lang, Severity } from "../api/types";
+import type { Lang } from "../api/types";
 
-/** One notification, already in the user's language. `level` decides how Ajar looks. */
+/** One notification, already in the user's language. */
 export interface AjarNotice {
-  id: string;
   title: string;
   body: string;
-  level: Severity | "clear" | "unknown";
 }
 
 /** A built desktop app file offered by the running Ajar app (GET /api/downloads). */
@@ -21,9 +19,6 @@ interface DesktopBridge {
   isDesktop: true;
   notify: (notice: AjarNotice) => void;
   setLang: (lang: Lang) => void;
-  onToast: (callback: (notice: AjarNotice) => void) => () => void;
-  toastClosed: () => void;
-  openMain: () => void;
 }
 
 declare global {

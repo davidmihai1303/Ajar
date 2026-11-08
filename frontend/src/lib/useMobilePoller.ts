@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { api } from "../api/client";
-import { assessment } from "./scan";
 import { useApp } from "../state/AppState";
 
 /**
@@ -42,7 +41,6 @@ export function useMobilePoller(enabled = true, intervalMs = 8000) {
           notify({
             title: t("desktop.scanCompleted", { score: latest.score ?? "—" }),
             body: full ? t("desktop.scanCompletedBody", { high, medium }) : t("mobile.notifySubtitle"),
-            level: full ? assessment(full) : "unknown",
           });
 
           // Trigger mobile vibration

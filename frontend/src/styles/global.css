@@ -399,32 +399,15 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
 .inbox-open { flex: none; }
 @media (max-width: 480px) { .inbox-icon { display: none; } .inbox-item { padding: 10px 12px; gap: 8px; } }
 
-/* Ajar notification popup: text on the left, Ajar (animated) on the right */
-.ajar-toast-host { position: fixed; top: 20px; right: 20px; z-index: 60; width: min(420px, calc(100vw - 40px)); }
-.ajar-toast { position: relative; display: flex; align-items: center; gap: 14px; padding: 16px 14px 16px 20px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-left: 5px solid var(--walnut); border-radius: 18px; box-shadow: 0 16px 40px rgba(42, 36, 32, 0.22); animation: ajar-toast-in 0.45s cubic-bezier(0.3, 1.4, 0.6, 1); }
-.ajar-toast.level-high { border-left-color: var(--red); }
-.ajar-toast.level-medium { border-left-color: var(--amber); }
-.ajar-toast.level-low { border-left-color: var(--blue); }
-.ajar-toast.level-clear { border-left-color: var(--green); }
-.ajar-toast-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.ajar-toast-title { font: 600 17px/1.3 var(--sans); padding-right: 18px; }
-.ajar-toast-body { margin: 0; font-size: 16px; line-height: 1.45; color: var(--text-2); }
-.ajar-toast-open { align-self: flex-start; padding: 0; min-height: 32px; }
-.ajar-toast-mascot { flex: none; width: 96px; }
-.ajar-toast-close { position: absolute; top: 6px; right: 8px; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
-.ajar-toast-close:hover { background: var(--hover); color: var(--text); }
-@keyframes ajar-toast-in { from { transform: translateY(-14px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .ajar-toast { animation: none; } }
-/* In the desktop app's popup window the page itself is transparent; only the card shows. */
-html.toast-window, html.toast-window body { background: transparent; overflow: hidden; }
-html.toast-window #root { padding: 12px; }
-.ajar-toast.standalone { animation-name: ajar-toast-up; }
-@keyframes ajar-toast-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
-
 .sidebar-button { width: 100%; background: transparent; border: 0; text-align: left; cursor: pointer; }
 .download-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .download-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .download-steps code, .banner code { overflow-wrap: anywhere; }
+
+/* Rotating words while a scan runs */
+.scan-word { display: inline-block; animation: scan-word-in 0.35s ease-out; }
+@keyframes scan-word-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .scan-word { animation: none; } }
 
 .mobile-notify-card {
   border: 1.5px solid var(--oak);

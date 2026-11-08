@@ -4,6 +4,7 @@ import { formatDate } from "../i18n";
 import { assessment, mascotState, severityCounts } from "../lib/scan";
 import { useApp } from "../state/AppState";
 import AjarMascot from "./AjarMascot";
+import ScanWord from "./ScanWord";
 import { SEVERITY_ICON } from "./ScoreBadge";
 
 export default function AjarWidget({ standalone = false }: { standalone?: boolean }) {
@@ -27,7 +28,7 @@ export default function AjarWidget({ standalone = false }: { standalone?: boolea
           <span className={`serif ajar-widget-number text-${level}`}>{score ?? "—"}</span>
           <span className="muted">/ 100</span>
         </div>
-        <span className={`chip sev-${level} ajar-widget-level`}>{t(scanning ? "scan.running.short" : `assessment.${level}`)}</span>
+        <span className={`chip sev-${level} ajar-widget-level`}>{scanning ? <ScanWord /> : t(`assessment.${level}`)}</span>
         {counts && (
           <ul className="ajar-widget-counts" aria-label={t("dashboard.bySeverity")}>
             {(["high", "medium", "low", "info"] as const).map((severity) => (

@@ -28,9 +28,7 @@ export default function AjarDock() {
       <div className="ajar-score" aria-live="polite">
         {!ready ? (
           <span className="muted">{t("common.loading")}</span>
-        ) : scanning ? (
-          <span className="muted">{t("scan.running.short")}</span>
-        ) : score === null ? (
+        ) : scanning ? null : score === null ? (
           <>
             <span className="serif ajar-score-unknown">{t("score.unknown")}</span>
             <span className="muted">{t(scan ? "dashboard.unassessed" : "score.noScanYet")}</span>

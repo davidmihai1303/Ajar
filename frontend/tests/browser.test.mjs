@@ -521,3 +521,30 @@ test("the device list shows IP, masked MAC, maker and type without opening a row
   assert.match(text, /Router/);
   assert.match(text, /IP 192\.168\.1\.1 · MAC 50:C7:BF:xx:xx:xx/);
 });
+
+test("a scan shows changing door-themed words and ends with a normal system notification", async (t) => {
+  let finish;
+  const done = new Promise((resolve) => { finish = resolve; });
+  const page = await open(t, "scan", { async onApi(path) {
+    if (path === "/api/network") return { json: { ...network, allowlist: [network.subnet], address: "192.168.1.7" } };
+    if (path === "/api/scans") { await done; return { json: good }; }
+  } });
+  await page.addInitScript(() => {
+    window.__shown = [];
+    window.Notification = class { static permission = "granted"; constructor(title, options) { window.__shown.push({ title, ...options }); } };
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Scan this network" }).click();
+  await confirmNetwork(page);
+  const word = page.locator(".scan-word");
+  const first = await word.innerText();
+  assert.match(first, /doors|keyholes|hinges/);
+  await page.waitForFunction((seen) => document.querySelector(".scan-word")?.textContent !== seen, first, { timeout: 4000 });
+  finish();
+  await page.waitForURL("**/#/dashboard");
+  await page.waitForFunction(() => window.__shown.length > 0);
+  const [shown] = await page.evaluate(() => window.__shown);
+  assert.match(shown.title, /Scan complete: Score 100\/100/);
+  assert.equal(shown.icon, "/ajar-192.png");
+  assert.equal(await page.locator(".ajar-toast").count(), 0);
+});
