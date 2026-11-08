@@ -122,3 +122,29 @@ def test_ask_accepts_conversation_history_and_validates_it(tmp_path, monkeypatch
         assert c.post("/api/ask", json={"scan_id": sid, "question": "x", "history": history * 11}).status_code == 422
         bad = [{"question": "q", "answer": "a", "role": "system"}]
         assert c.post("/api/ask", json={"scan_id": sid, "question": "x", "history": bad}).status_code == 422
+
+
+def test_ask_accepts_an_optional_user_profile_and_validates_it(tmp_path, monkeypatch):
+    from netcheck import config
+    monkeypatch.setattr(config, "LLM_FREE_ANSWERS", True)
+    bodies = []
+
+    def respond(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": []})
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Turn off port 80."}}]})
+
+    model = LLMClient("http://127.0.0.1:8080/v1", transport=httpx.MockTransport(respond))
+    xml = b"""<nmaprun><host><status state="up"/><address addr="192.168.1.7" addrtype="ipv4"/>
+        <ports><port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port></ports></host></nmaprun>"""
+    with TestClient(create_app(db=str(tmp_path / "db"), model=model), base_url="http://localhost") as c:
+        sid = c.post("/api/scans/import", files={"files": ("fixture.xml", xml)}).json()[0]["scan_id"]
+        profile = {"age": "30_49", "tech": "intermediate", "profession": "nurse"}
+        r = c.post("/api/ask", json={"scan_id": sid, "lang": "en", "question": "Is it safe?", "profile": profile})
+        assert r.status_code == 200 and r.json()["answer"] == "Turn off port 80."
+        sent = json.loads(bodies[0]["messages"][-1]["content"])["user"]
+        assert sent["age"] == "30-49" and sent["profession"] == "nurse"
+        for bad in ({"age": "42"}, {"tech": "root"}, {"profession": "x" * 61}, {"profession": "a", "role": "system"}):
+            assert c.post("/api/ask", json={"scan_id": sid, "question": "x", "profile": bad}).status_code == 422
+        assert c.post("/api/ask", json={"scan_id": sid, "question": "x", "profile": None}).status_code == 200
