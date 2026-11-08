@@ -1,0 +1,13 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Announces the Ajar events service so the phone app can find the Pi (DNS-SD type _ajar._tcp).
+     Installed to /etc/avahi/services/ajar.service by install_autoscan.sh with the announce option. -->
+<service-group>
+  <name replace-wildcards="yes">Ajar (%h)</name>
+  <service>
+    <type>_ajar._tcp</type>
+    <port>8002</port>
+    <txt-record>api=events/1</txt-record>
+    <txt-record>auth=bearer</txt-record>
+  </service>
+</service-group>

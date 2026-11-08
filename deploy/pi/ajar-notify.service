@@ -1,0 +1,21 @@
+# Template: install_autoscan.sh replaces @USER@ and @REPO@.
+# Read-only events for the paired phone: GET /events on port 8002, token required.
+[Unit]
+Description=Ajar events for the phone app (read-only, token required)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/deploy/pi/ajar_notify.py serve
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+# The event database lives in ~/.config/ajar; SQLite may need to write next to it even when reading.
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

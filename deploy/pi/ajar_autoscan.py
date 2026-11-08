@@ -15,7 +15,9 @@ Usage (as the normal user, never as root):
     ajar_autoscan.py consent revoke [--all]
     ajar_autoscan.py check                       # would a scan run now? (no scan)
     ajar_autoscan.py run                         # full scan, used by the 3-hour timer
-    ajar_autoscan.py discover [--no-scan]        # who is connected? used by the 10-minute timer
+    ajar_autoscan.py discover [--no-scan]        # who is connected? (one check)
+    ajar_autoscan.py watch                       # long-running service: discover every 60 s and as soon
+                                                 # as the neighbour table shows an unknown MAC
 
 Stage 2 (discover): host discovery only (nmap -sn through the agent and the root wrapper, no ports).
 Devices are remembered by HMAC(local key, MAC), never by the MAC itself. The first run on a network
@@ -40,9 +42,14 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ajar_events import EventLog  # noqa: E402  (same folder: deploy/pi)
 
 API = os.environ.get("AJAR_API", "http://127.0.0.1:8001")
 AGENT = os.environ.get("AJAR_AGENT", "http://127.0.0.1:8765")
@@ -345,13 +352,33 @@ def remember(known: dict, seen: dict, now: dt.datetime) -> list:
     return sorted(new, key=lambda fp: seen[fp]["ip"])
 
 
+def events() -> EventLog:
+    return EventLog(STATE_DIR)
+
+
+def record_scan_events(net_state: dict, scan: dict) -> None:
+    """Compare a finished full scan with the previous one on this network and log what got worse.
+    The first scan on a network only sets the reference (no event)."""
+    score = scan.get("score")
+    high = sum(1 for f in scan.get("findings") or [] if isinstance(f, dict) and f.get("severity") == "high")
+    previous_score, previous_high = net_state.get("last_score"), net_state.get("last_high")
+    if isinstance(previous_high, int) and high > previous_high:
+        events().add("new_high_risk", count=high - previous_high)
+    if isinstance(previous_score, int) and isinstance(score, int) and score < previous_score:
+        events().add("score_drop", score=score, previous=previous_score)
+    if isinstance(score, int):
+        net_state["last_score"], net_state["last_high"] = score, high
+
+
 def full_scan(network: dict, consent: dict) -> int:
     """Full scan through the app API (same path as the UI button). Records when it ran."""
     # Echo the network exactly as the API showed it: the agent re-checks it before scanning.
     status, scan = api("POST", "/api/scans", {"confirm": True, "expected_network": network}, timeout=SCAN_TIMEOUT_S)
     if status == 200:
         state = load_devices()
-        state.setdefault(consent["gateway_fp"], {})["last_full_scan"] = now_utc().isoformat(timespec="seconds")
+        net_state = state.setdefault(consent["gateway_fp"], {})
+        net_state["last_full_scan"] = now_utc().isoformat(timespec="seconds")
+        record_scan_events(net_state, scan)
         save_devices(state)
     if status == 409:
         say("Scanare sărită: altă scanare rulează deja.", "Scan skipped: another scan is already running.")
@@ -420,6 +447,7 @@ def cmd_discover(scan_new: bool = True) -> int:
         device = seen[fp]
         vendor = device["vendor"] or "producător necunoscut / unknown maker"
         say(f"DISPOZITIV NOU în rețea: {vendor}, IP {device['ip']}.", f"NEW DEVICE on the network: {vendor}, IP {device['ip']}.")
+    events().add("new_device", count=len(new))
 
     last = net_state.get("last_full_scan")
     recent = last and now - dt.datetime.fromisoformat(last) < FULL_SCAN_COOLDOWN
@@ -429,6 +457,73 @@ def cmd_discover(scan_new: bool = True) -> int:
     if scan_new:
         say("Scanarea completă a rulat recent; următoarea o va include.",
             "A full scan ran recently; the next one will include it.")
+    return EXIT_OK
+
+
+# ------------------------------------------------------------------ stage 3: watch (near real time)
+
+WATCH_INTERVAL_S = min(600, max(30, int(os.environ.get("AJAR_WATCH_INTERVAL", "60"))))
+WATCH_MIN_GAP_S = 15    # never more than one discovery every 15 s, whatever triggers it
+
+
+def parse_neigh_line(line: str) -> tuple[str, str] | None:
+    """`ip monitor neigh` line -> (IPv4, MAC), or None (deletions, IPv6, entries without a MAC)."""
+    parts = line.split()
+    if not parts or parts[0] in ("Deleted", "Miss") or "lladdr" not in parts:
+        return None
+    try:
+        ipaddress.IPv4Address(parts[0])
+    except ValueError:
+        return None
+    mac = parts[parts.index("lladdr") + 1].lower() if parts.index("lladdr") + 1 < len(parts) else ""
+    return (parts[0], mac) if mac.count(":") == 5 else None
+
+
+def known_fingerprints() -> set:
+    return {fp for net in load_devices().values() if isinstance(net, dict) for fp in net.get("devices", {})}
+
+
+def neighbour_watcher(trigger: threading.Event, key: bytes, known: callable) -> None:
+    """Passive: follows the kernel neighbour table (no packets sent). An unknown MAC wakes the loop.
+    Only devices that talk to the Pi appear here, so the 60-second discovery stays the safety net."""
+    ip_bin = shutil.which("ip")
+    if ip_bin is None:
+        return
+    with subprocess.Popen([ip_bin, "monitor", "neigh"], stdout=subprocess.PIPE, text=True) as proc:
+        for line in proc.stdout:
+            parsed = parse_neigh_line(line)
+            if parsed and fingerprint(key, parsed[1]) not in known():
+                trigger.set()
+
+
+def watch_loop(run_once, trigger: threading.Event, interval: float, min_gap: float,
+               iterations: int | None = None, clock=time.monotonic, sleep=time.sleep) -> None:
+    """Run `run_once` every `interval` seconds, or sooner when `trigger` is set, but never more often
+    than every `min_gap` seconds. Errors are logged and the loop goes on."""
+    last = None
+    done = 0
+    while iterations is None or done < iterations:
+        trigger.wait(timeout=interval)
+        trigger.clear()
+        if last is not None and clock() - last < min_gap:
+            sleep(min_gap - (clock() - last))
+        try:
+            run_once()
+        except AutoscanError as err:
+            say(f"Eroare: {err}", f"Error: {err}", sys.stderr)
+        last = clock()
+        done += 1
+
+
+def cmd_watch() -> int:
+    say(f"Supraveghez rețeaua: verificare la {WATCH_INTERVAL_S} s și la fiecare device necunoscut observat.",
+        f"Watching the network: check every {WATCH_INTERVAL_S} s and on every unknown device seen.")
+    trigger = threading.Event()
+    key = load_key()
+    if key is not None:
+        threading.Thread(target=neighbour_watcher, args=(trigger, key, known_fingerprints), daemon=True).start()
+    trigger.set()                     # first check right away
+    watch_loop(lambda: cmd_discover(scan_new=True), trigger, WATCH_INTERVAL_S, WATCH_MIN_GAP_S)
     return EXIT_OK
 
 
@@ -448,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("run")
     discover = sub.add_parser("discover")
     discover.add_argument("--no-scan", action="store_true", help="only log new devices, no follow-up full scan")
+    sub.add_parser("watch", help="long-running: discover every 60 s and on unknown neighbours (systemd)")
     args = parser.parse_args(argv)
     try:
         if args.command == "consent":
@@ -460,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_check()
         if args.command == "discover":
             return cmd_discover(scan_new=not args.no_scan)
+        if args.command == "watch":
+            return cmd_watch()
         return cmd_run()
     except AutoscanError as err:
         say(f"Eroare: {err}", f"Error: {err}", sys.stderr)

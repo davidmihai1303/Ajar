@@ -212,7 +212,7 @@ LAPTOP = {"ip": "172.20.10.11", "mac": "3c:a9:f4:44:55:66", "vendor": "Intel Cor
 CAMERA = {"ip": "172.20.10.7", "mac": "c0:56:e3:77:88:99", "vendor": "Hikvision"}
 
 
-class DiscoverTests(StateDirTestCase):
+class DiscoverHelpers(StateDirTestCase):
     def discover(self, devices, scan_new=True, now=None, network=HOTSPOT, discover_status=200, mac=GATEWAY_MAC):
         out = io.StringIO()
         with mock.patch.object(autoscan, "api", self.fake_api(network, devices=devices, discover_status=discover_status)), \
@@ -222,6 +222,8 @@ class DiscoverTests(StateDirTestCase):
             code = autoscan.cmd_discover(scan_new=scan_new)
         return code, out.getvalue()
 
+
+class DiscoverTests(DiscoverHelpers):
     def test_no_consent_means_no_discovery(self):
         code, out = self.discover([PHONE])
         self.assertEqual(code, autoscan.EXIT_SKIPPED)
@@ -324,6 +326,88 @@ class DiscoverTests(StateDirTestCase):
         self.assertEqual(autoscan.remember(known, {}, now + dt.timedelta(days=40)), [])
         self.assertEqual(known, {})
         self.assertEqual(autoscan.remember(known, seen, now + dt.timedelta(days=41)), ["fp1"])
+
+
+class EventTests(DiscoverHelpers):
+    def events(self):
+        return autoscan.events().since(0)
+
+    def test_baseline_and_known_devices_create_no_event(self):
+        self.grant()
+        self.discover([PHONE])
+        self.discover([PHONE])
+        self.assertEqual(self.events(), [])
+
+    def test_new_devices_create_one_minimal_event(self):
+        self.grant()
+        self.discover([PHONE])
+        self.discover([PHONE, LAPTOP, CAMERA], scan_new=False)
+        events = self.events()
+        self.assertEqual([(e["type"], e["count"]) for e in events], [("new_device", 2)])
+        text = json.dumps(events)
+        for secret in (CAMERA["ip"], CAMERA["mac"], "Hikvision", LAPTOP["ip"]):
+            self.assertNotIn(secret, text)
+
+    def test_scan_events(self):
+        state = {}
+        autoscan.record_scan_events(state, {"score": 90, "findings": [{"severity": "medium"}]})
+        self.assertEqual(self.events(), [])
+        autoscan.record_scan_events(state, {"score": 50, "findings": [{"severity": "high"}, {"severity": "high"},
+                                                                       {"severity": "medium"}]})
+        events = self.events()
+        self.assertEqual([(e["type"], e.get("count")) for e in events], [("new_high_risk", 2), ("score_drop", 1)])
+        self.assertEqual((events[1]["score"], events[1]["previous"]), (50, 90))
+        autoscan.record_scan_events(state, {"score": 100, "findings": []})
+        self.assertEqual(len(self.events()), 2)
+
+
+class WatchTests(unittest.TestCase):
+    def test_parse_neigh_line(self):
+        self.assertEqual(autoscan.parse_neigh_line("172.20.10.7 dev wlan0 lladdr C0:56:E3:77:88:99 REACHABLE\n"),
+                         ("172.20.10.7", "c0:56:e3:77:88:99"))
+        for line in ("Deleted 172.20.10.7 dev wlan0 lladdr c0:56:e3:77:88:99 STALE",
+                     "172.20.10.7 dev wlan0  FAILED", "fe80::1 dev wlan0 lladdr aa:bb:cc:dd:ee:ff router STALE",
+                     "Miss 172.20.10.9 dev wlan0", "", "172.20.10.7 dev wlan0 lladdr", "garbage lladdr x"):
+            self.assertIsNone(autoscan.parse_neigh_line(line), line)
+
+    def make_loop(self, results):
+        now = [0.0]
+        slept = []
+        runs = []
+
+        def run_once():
+            runs.append(now[0])
+            outcome = results.pop(0) if results else None
+            if isinstance(outcome, Exception):
+                raise outcome
+
+        def sleep(seconds):
+            slept.append(seconds)
+            now[0] += seconds
+        return now, slept, runs, run_once, sleep
+
+    def test_trigger_runs_at_once_but_respects_the_minimum_gap(self):
+        now, slept, runs, run_once, sleep = self.make_loop([])
+        trigger = mock.Mock()
+        trigger.wait.side_effect = lambda timeout: now.__setitem__(0, now[0] + 1)
+        autoscan.watch_loop(run_once, trigger, interval=60, min_gap=15, iterations=3,
+                            clock=lambda: now[0], sleep=sleep)
+        self.assertEqual(len(runs), 3)
+        self.assertTrue(all(b - a >= 15 for a, b in zip(runs, runs[1:])))
+        self.assertTrue(slept)
+
+    def test_errors_do_not_stop_the_loop(self):
+        now, _, runs, run_once, sleep = self.make_loop([autoscan.AutoscanError("agent down"), None])
+        trigger = mock.Mock()
+        trigger.wait.side_effect = lambda timeout: now.__setitem__(0, now[0] + timeout)
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            autoscan.watch_loop(run_once, trigger, interval=60, min_gap=15, iterations=2,
+                                clock=lambda: now[0], sleep=sleep)
+        self.assertEqual(len(runs), 2)
+        self.assertIn("agent down", err.getvalue())
+
+    def test_interval_setting_is_bounded(self):
+        self.assertTrue(30 <= autoscan.WATCH_INTERVAL_S <= 600)
 
 
 if __name__ == "__main__":

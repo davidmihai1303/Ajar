@@ -1,59 +1,63 @@
-# Ajar pe Raspberry Pi: scanare programată cu acord legat de rețea
+# Ajar pe Raspberry Pi: supraveghere automată, cu acord legat de rețea
 
-- **Etapa 1:** o **scanare completă la 3 ore**.
-- **Etapa 2:** la **10 minute**, o verificare rapidă: **cine e conectat** (fără porturi). Un device nou e
-  scris în log și pornește o scanare completă (cel mult una la 30 de minute), ca să vezi ce porturi are.
+| Etapă | Ce face | Cât de des |
+|---|---|---|
+| 1 | **scanare completă** (porturi, probleme, scor) | la 3 ore (timer) |
+| 2 + 3 | **cine e conectat** (fără porturi) → device nou = eveniment + o scanare completă | la **60 s** și **imediat** când tabela de vecini arată un MAC necunoscut (serviciul `watch`) |
+| 3 | **evenimente pentru telefon** (device nou, problemă gravă nouă, scor scăzut), cu long-poll | instant, cât timp telefonul e în rețea |
 
-Ambele rulează **doar în rețeaua pentru care ai dat acordul**. În orice altă rețea (Wi-Fi-ul sălii,
-la un prieten, la hotel) refuză și scriu motivul în log.
+Totul rulează **doar în rețeaua pentru care ai dat acordul**. În orice altă rețea (Wi-Fi-ul sălii, la un
+prieten, la hotel) nu scanează și scrie motivul în log. Nimic nu iese din casă: niciun serviciu extern.
 
-## De ce un acord legat de rețea
+## Acordul legat de rețea
 
-Brief-ul cere confirmare explicită pentru orice scanare live (FR-02). O scanare programată nu are pe
-nimeni care să confirme, așa că proprietarul confirmă **o singură dată pentru fiecare rețea**:
+Brief-ul cere confirmare explicită pentru orice scanare live (FR-02). O scanare automată nu are pe nimeni
+care să confirme, așa că proprietarul confirmă **o singură dată pentru fiecare rețea**:
 
 | Ce se salvează | De ce |
 |---|---|
 | numele Wi-Fi + subnetul + IP-ul routerului | rețeaua confirmată |
-| **amprenta routerului**: HMAC-SHA256(cheie locală, MAC router) | toate hotspoturile de iPhone au `172.20.10.0/28`, iar numele Wi-Fi poate fi copiat. MAC-ul routerului **nu** e salvat |
+| **amprenta routerului**: HMAC-SHA256(cheie locală, MAC router) | toate hotspoturile de iPhone au `172.20.10.0/28`, iar numele Wi-Fi poate fi copiat. MAC-ul **nu** e salvat |
 | data expirării (implicit 30 de zile) | acordul nu rămâne valabil la nesfârșit |
 
-Fișierele stau în `~/.config/ajar/` (`consent.json`, `consent.key`), cu drepturi `0600`.
+Stare locală în `~/.config/ajar/` (toate `0600`): `consent.json`, `consent.key`, `devices.json`
+(doar amprente HMAC ale MAC-urilor), `events.sqlite`, `notify.token`.
 
 ## Cum funcționează
 
 ```
-timer (la 3 ore) ──► ajar_autoscan.py run
-                       ├─ GET  http://127.0.0.1:8001/api/network
-                       ├─ amprenta routerului (ip neigh) == cea din acord?  și acordul nu a expirat?
-                       │     NU ─► „Scanare sărită" în log, nimic trimis
-                       │     DA ─► POST /api/scans  (aceeași cale ca butonul din UI:
-                       │                             agent → gardă → netcheck-nmap → istoric)
-                       └─ în log: scorul și numărul de probleme
+                        ┌─ ajar-autoscan.timer (3 h) ─► run ──► POST /api/scans (aplicația, ca butonul din UI)
+acord pentru rețea? ────┤                                            └─► scor mai mic / mai multe probleme grave
+                        │                                                 = eveniment
+                        └─ ajar-watch.service ─► discover la 60 s sau imediat la un MAC necunoscut
+                                                  └─► POST 127.0.0.1:8765/discover (agentul)
+                                                        └─► sudo netcheck-nmap --discover <subnet>
+                                                              nmap -sn -n --max-rate 100 (fără porturi, fără DNS)
+                                                  device nou ─► eveniment + o scanare completă (max. 1 / 30 min)
+
+ajar-notify.service (port 8002) ─► GET /events?since=N&wait=60 + token ─► telefonul (aplicația Ajar)
 ```
 
-Nu schimbă aplicația și nu rulează nimic ca root. Scanarea trece prin aceeași gardă și același wrapper ca
-o scanare manuală, iar rezultatul apare în **Istoric** ca orice scanare.
+- **`watch` e pasiv în plus:** urmărește tabela de vecini a kernelului (`ip monitor neigh`), fără pachete.
+  Vede doar device-urile care comunică cu Pi-ul, de aceea descoperirea la 60 s rămâne plasa de siguranță.
+  Pe un hotspot `/28` asta înseamnă ~16 pachete ARP pe minut; acasă, pe `/24`, ~256 pe minut.
+- Prima descoperire pe o rețea doar **notează ce e conectat** (inventar inițial), fără eveniment.
+- Un device nevăzut 30 de zile e uitat; dacă revine, apare din nou ca nou. Telefoanele cu adresă Wi-Fi
+  aleatorie o păstrează de obicei pe aceeași rețea; dacă și-o schimbă, apar ca device nou.
 
-## Etapa 2: device-uri noi (la 10 minute)
+## Serviciul pentru telefon (`ajar_notify.py`)
 
-```
-timer (la 10 min) ──► ajar_autoscan.py discover
-                        ├─ acordul se potrivește? (la fel ca la etapa 1)      NU ─► sărit, motiv în log
-                        ├─ POST http://127.0.0.1:8765/discover   (agentul, aceleași protecții ca /scan)
-                        │     └─ sudo netcheck-nmap --discover <subnet>
-                        │           nmap -sn -n --max-rate 100   (cine e conectat; fără porturi, fără DNS,
-                        │                                          nimic scris pe disc)
-                        ├─ fiecare MAC → amprentă HMAC (MAC-ul nu e salvat) → comparat cu inventarul rețelei
-                        └─ device nou ─► „DISPOZITIV NOU în rețea: <producător>, IP …" în log
-                                         + o scanare completă (dacă n-a fost una în ultimele 30 de minute)
-```
+| Regulă | Detaliu |
+|---|---|
+| doar citire | o singură cale: `GET /events`. `POST`/`DELETE` → 405. Nu poate porni scanări |
+| token obligatoriu | `Authorization: Bearer <token>`, comparat în timp constant. Fără el → 401 |
+| conținut minim | `id`, `time`, `type`, `severity`, `count` (+ `score`, `previous` la scăderea scorului). **Niciodată** IP, MAC, nume sau producător |
+| long-poll | `?since=<ultimul id>&wait=<0..60>`: răspunde imediat ce apare un eveniment, altfel după `wait` secunde cu listă goală |
+| fără `since` | răspunde doar `{"last_id": N}`, ca un telefon nou să pornească „de acum" |
+| limite | 120 de cereri/minut pe client, maximum 8 long-poll-uri deschise |
+| rețea | ascultă pe `0.0.0.0:8002` (`AJAR_NOTIFY_BIND`, `AJAR_NOTIFY_PORT`), **HTTP simplu**: cine poate citi traficul Wi-Fi ar putea vedea token-ul și, cu el, doar aceste evenimente minimale. Îl schimbi cu `pair --new` |
 
-- Prima rulare pe o rețea doar **notează ce e conectat** (inventar inițial), fără alertă.
-- Inventarul e **separat pe fiecare rețea** (`~/.config/ajar/devices.json`, `0600`, doar amprente).
-- Un device nevăzut 30 de zile e uitat; dacă revine, apare din nou ca nou.
-- Telefoanele cu adresă Wi-Fi aleatorie o păstrează de obicei pe aceeași rețea, deci sunt recunoscute.
-  Un telefon care își schimbă adresa aleatorie apare ca device nou.
+Tipuri de evenimente: `new_device` (info), `new_high_risk` (high), `score_drop` (medium).
 
 ## Instalare (o singură dată)
 
@@ -61,68 +65,99 @@ Ai nevoie de aplicație (containerul pe `127.0.0.1:8001`) și de serviciul `netc
 
 ```bash
 cd ~/Smarthack
-sudo ./scanner/install.sh $USER                  # wrapper-ul root s-a schimbat (modul --discover)
-sudo systemctl restart netcheck-agent            # agentul are endpoint-ul nou /discover
-./deploy/pi/install_autoscan.sh                  # fără sudo; instalează ambele timere
-python3 deploy/pi/ajar_autoscan.py consent grant # arată rețeaua, scrii DA
+sudo apt install -y qrencode                      # opțional: codul QR pentru împerechere
+sudo ./scanner/install.sh $USER                   # wrapper-ul root are modul --discover
+sudo systemctl restart netcheck-agent             # agentul are endpoint-ul /discover
+python3 deploy/pi/ajar_autoscan.py consent grant  # arată rețeaua, scrii DA
+python3 deploy/pi/ajar_notify.py pair             # token + cod QR pentru telefon
+./deploy/pi/install_autoscan.sh --announce        # fără sudo; --announce = anunț mDNS _ajar._tcp
 ```
+
+`install_autoscan.sh` șterge singur timer-ul de 10 minute de la etapa 2 (`ajar-discover`), dacă există.
 
 ## Comenzi
 
 | Comandă | Ce face |
 |---|---|
-| `python3 deploy/pi/ajar_autoscan.py consent grant [--days 30]` | dă acordul pentru rețeaua curentă (interactiv) |
-| `python3 deploy/pi/ajar_autoscan.py consent show` | rețelele cu acord și data expirării |
-| `python3 deploy/pi/ajar_autoscan.py consent revoke` | retrage acordul pentru rețeaua curentă |
-| `python3 deploy/pi/ajar_autoscan.py consent revoke --all` | retrage toate acordurile |
-| `python3 deploy/pi/ajar_autoscan.py check` | spune dacă o scanare ar rula acum (nu scanează) |
-| `python3 deploy/pi/ajar_autoscan.py discover --no-scan` | verificarea de device-uri noi, acum, fără scanare completă |
+| `python3 deploy/pi/ajar_autoscan.py consent grant [--days 30]` | acord pentru rețeaua curentă (interactiv) |
+| `python3 deploy/pi/ajar_autoscan.py consent show` / `revoke [--all]` | vezi / retragi acordurile |
+| `python3 deploy/pi/ajar_autoscan.py check` | ar rula o scanare acum? (nu scanează) |
+| `python3 deploy/pi/ajar_autoscan.py discover --no-scan` | o verificare de device-uri noi, acum |
 | `python3 scanner/agent.py discover --confirm` | cine e conectat (MAC-uri afișate mascat) |
-| `sudo systemctl start ajar-autoscan.service` | pornește o scanare completă programată **acum** (test) |
-| `sudo systemctl start ajar-discover.service` | pornește verificarea de device-uri noi **acum** (test) |
-| `journalctl -u ajar-autoscan -u ajar-discover -n 30 --no-pager` | log: ce a rulat sau a fost sărit, device-uri noi |
-| `systemctl list-timers 'ajar-*'` | când rulează următoarele verificări |
-| `./deploy/pi/install_autoscan.sh --remove` | oprește și șterge ambele timere |
+| `python3 deploy/pi/ajar_notify.py pair [--new]` | arată din nou QR-ul / schimbă token-ul |
+| `sudo systemctl start ajar-autoscan.service` | o scanare completă **acum** (test) |
+| `journalctl -u ajar-watch -u ajar-autoscan -u ajar-notify -f` | log în timp real |
+| `systemctl status ajar-watch ajar-notify` | starea serviciilor |
+| `./deploy/pi/install_autoscan.sh --remove` | oprește și șterge tot (inclusiv anunțul mDNS) |
 
-## Interval mai scurt pentru demo
+Intervalul de descoperire: `AJAR_WATCH_INTERVAL` (30-600 s, implicit 60), de exemplu cu
+`sudo systemctl edit ajar-watch.service` → `[Service]` / `Environment=AJAR_WATCH_INTERVAL=30`.
 
-```bash
-sudo systemctl edit ajar-autoscan.timer
+## Test complet (pe hotspotul echipei)
+
+1. `journalctl -u ajar-watch -f` într-un terminal: „Inventar inițial: N dispozitive".
+2. De pe laptop, cu token-ul din `~/.config/ajar/notify.token` și IP-ul Pi-ului:
+   ```bash
+   curl -s -H "Authorization: Bearer <token>" "http://<pi>:8002/events"
+   curl -s -H "Authorization: Bearer <token>" "http://<pi>:8002/events?since=<last_id>&wait=60"
+   ```
+   A doua comandă rămâne deschisă.
+3. Conectezi la hotspot un device nou. În sub un minut: în log „DISPOZITIV NOU…", iar `curl`-ul de la
+   pasul 2 răspunde imediat cu `{"type": "new_device", …}`. Apoi pornește o scanare completă.
+4. Fără token: `curl -i http://<pi>:8002/events` → `401`.
+5. Pi-ul pe **alt hotspot** → `ajar_autoscan.py check` spune că **NU** ar rula, iar `watch` nu scanează.
+
+## Aplicația Android (schiță)
+
+Împerechere: scanezi QR-ul `ajar://pair?host=…&port=8002&token=…&name=…` și salvezi datele în
+`EncryptedSharedPreferences`. Un **foreground service** (cu notificarea permanentă „Ajar veghează rețeaua")
+rulează cât timp telefonul e pe Wi-Fi (`ConnectivityManager.NetworkCallback`); cere și excepția de la
+optimizarea bateriei. Bucla de long-poll:
+
+```kotlin
+// Kotlin, kotlinx.coroutines + java.net (fără biblioteci externe)
+suspend fun pollEvents(host: String, port: Int, token: String, store: Prefs) = withContext(Dispatchers.IO) {
+    var since = store.lastId ?: fetchLastId(host, port, token)          // GET /events (fără since)
+    while (isActive) {
+        try {
+            val url = URL("http://$host:$port/events?since=$since&wait=60")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                setRequestProperty("Authorization", "Bearer $token")
+                connectTimeout = 5_000
+                readTimeout = 70_000                                     // mai mult decât wait=60
+            }
+            when (conn.responseCode) {
+                200 -> {
+                    val body = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val events = body.getJSONArray("events")
+                    for (i in 0 until events.length()) showNotification(events.getJSONObject(i))
+                    since = body.getInt("last_id"); store.lastId = since
+                }
+                401 -> { stopAndAskToPairAgain(); return@withContext }
+                else -> delay(30_000)                                    // 429 / 503 / altceva
+            }
+            conn.disconnect()
+        } catch (e: IOException) {
+            delay(15_000)                                                // Pi oprit / altă rețea
+        }
+    }
+}
 ```
-```ini
-[Timer]
-OnUnitActiveSec=
-OnUnitActiveSec=10min
-```
-Revii la 3 ore cu `sudo systemctl revert ajar-autoscan.timer`. La fel pentru verificarea de device-uri
-noi (de exemplu la 1 minut, ca la demo să apară repede):
-```bash
-sudo systemctl edit ajar-discover.timer     # [Timer] / OnUnitActiveSec= / OnUnitActiveSec=1min
-```
 
-## Test: un device nou e observat
-
-1. `consent grant`, apoi `sudo systemctl start ajar-discover.service` → în log: „Inventar inițial: N dispozitive".
-2. Conectezi la hotspot un device care nu era (un telefon, un laptop).
-3. `sudo systemctl start ajar-discover.service` → „DISPOZITIV NOU în rețea: <producător>, IP …",
-   apoi pornește o scanare completă, care apare în **Istoric**.
-
-## Test: altă rețea este refuzată
-
-1. `consent grant` pe hotspotul echipei.
-2. Muți Pi-ul pe alt hotspot (alt telefon).
-3. `python3 deploy/pi/ajar_autoscan.py check` → „Scanarea automată NU ar rula (no consent for this network)".
-4. Același nume Wi-Fi și același subnet, dar alt telefon → refuzat cu motivul `different gateway_fp`.
+`showNotification` afișează texte scurte, fără detalii, de exemplu „Un device nou s-a conectat la rețea"
+(`new_device`) sau „O problemă gravă nouă în rețea" (`new_high_risk`). Detaliile se văd în aplicație.
+Pentru găsirea automată a Pi-ului: `NsdManager.discoverServices("_ajar._tcp", …)`.
 
 ## Teste
 
 ```bash
-python3 -m unittest discover -s deploy/pi/tests -v   # 32 de teste, doar biblioteca standard, nu scanează nimic
-python3 -m unittest discover -s scanner/tests -v     # 51, inclusiv modul --discover al wrapper-ului și /discover
+python3 -m unittest discover -s deploy/pi/tests -v   # 59, doar biblioteca standard, nu scanează nimic
+python3 -m unittest discover -s scanner/tests -v     # 51, inclusiv --discover și /discover
 ```
 
 ## Reguli
 
 - Doar rețele proprii sau cu permisiunea proprietarului. Acasă, cere acordul celor din casă.
 - La hackathon, Pi-ul stă doar pe hotspotul echipei.
-- Nu rula scriptul ca root (refuză singur).
+- Nimic din `deploy/pi` nu rulează ca root (scripturile refuză singure); pasul root rămâne `netcheck-nmap`.
+- **Înainte de juriu**: decideți dacă `ajar-notify` și anunțul mDNS rămân pornite (`--remove` le oprește).

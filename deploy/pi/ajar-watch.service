@@ -1,0 +1,20 @@
+# Template: install_autoscan.sh replaces @USER@ and @REPO@.
+# Who is connected? Every 60 s, and right away when the neighbour table shows an unknown MAC.
+# Only on a network with saved consent. Replaces the 10-minute ajar-discover.timer of stage 2.
+[Unit]
+Description=Ajar new-device watch (near real time, only on a network with saved consent)
+After=network-online.target netcheck-agent.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/deploy/pi/ajar_autoscan.py watch
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
