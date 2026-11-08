@@ -197,6 +197,14 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 | `LLM_TIMEOUT` | `60` | seconds to wait for the LLM before showing the built-in text |
 | `NETCHECK_AGENT_URL` | `http://127.0.0.1:8765` | where the app finds the scanner agent |
 | `NETCHECK_LANG` | `ro` | default UI language |
+| `NETCHECK_BIND_HOST` | `127.0.0.1` | LAN test mode only: `0.0.0.0` makes the web app reachable from the hotspot |
+| `NETCHECK_ALLOWED_HOSTS` | empty | LAN test mode only: extra names/IPs the app answers to, e.g. `raspberrypi.local,172.20.10.5` (no `*`) |
+
+**LAN test mode (no login).** To open the app from another device on the team hotspot (e.g. the app runs
+on a Raspberry Pi), set both variables above in `.env` and restart with `docker compose up -d`, then open
+`http://<pi name or IP>:8001`. Everyone on that Wi-Fi can then see the scan results and start scans, so use
+it only on your own hotspot and switch it off for the jury session. The scanner agent always stays on
+`127.0.0.1`, the scope guard is unchanged, and cross-site requests are still refused.
 
 ### 5.3 Start
 

@@ -1,4 +1,10 @@
-"""Loopback-only application serving the React build and its local API."""
+"""Loopback-only application serving the React build and its local API.
+
+LAN test mode (off by default): NETCHECK_ALLOWED_HOSTS adds host names the app answers to, and the
+server is started on a network address (NETCHECK_BIND_HOST, see docker-compose.yml). There is NO login
+in that mode, so it is meant only for testing on the team's own hotspot.
+"""
+import logging
 import sqlite3
 import threading
 from contextlib import asynccontextmanager
@@ -16,9 +22,19 @@ from .agent_client import AgentClient
 from . import routes_explain, routes_history, routes_scans
 
 
+LOCAL_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost")
+log = logging.getLogger("netcheck")
+
+
 def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
                static_dir: Path | None = None, agent: AgentClient | None = None,
-               model: LLMClient | None = None, max_xml: int = config.MAX_XML_BYTES) -> FastAPI:
+               model: LLMClient | None = None, max_xml: int = config.MAX_XML_BYTES,
+               extra_hosts: tuple[str, ...] = config.ALLOWED_HOSTS) -> FastAPI:
+    allowed_hosts = list(dict.fromkeys(LOCAL_HOSTS + tuple(extra_hosts)))
+    if extra_hosts:
+        log.warning("LAN test mode: the app also answers to %s WITHOUT a login. "
+                    "Anyone on this Wi-Fi using those names can open it. Use only on the team hotspot.",
+                    ", ".join(extra_hosts))
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.agent = agent or AgentClient(config.AGENT_URL)
@@ -48,7 +64,7 @@ def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"], www_redirect=False)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts, www_redirect=False)
 
     @app.exception_handler(RequestValidationError)
     async def bad_input(request, exc):

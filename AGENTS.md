@@ -22,7 +22,7 @@ with a secret answer key. Extra findings cost as much as missing ones. Correctne
 | `backend/netcheck/analysis/` | Docker | Pure and deterministic. Must **not** import `history`, `api`, `explain`, network code or any LLM. No I/O except reading the XML file. |
 | `backend/netcheck/history/` | Docker | Local SQLite only. Compare scans **by IP, never by MAC**. |
 | `backend/netcheck/explain/` | Docker | Static YAML texts always work. `llm.py` is optional and selects verified evidence. |
-| `backend/netcheck/api/` | Docker | Never runs nmap; calls the host agent at `NETCHECK_AGENT_URL`. Binds to 127.0.0.1. |
+| `backend/netcheck/api/` | Docker | Never runs nmap; calls the host agent at `NETCHECK_AGENT_URL`. Binds to 127.0.0.1 (LAN test mode via `NETCHECK_BIND_HOST` + `NETCHECK_ALLOWED_HOSTS` is opt-in and has no login; never make it the default, never allow `*`). |
 | `frontend/` | built into the backend image | Talks only to `/api/*`. |
 
 The only contract between scanner and backend is an **nmap XML file**.

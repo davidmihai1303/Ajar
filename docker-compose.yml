@@ -5,8 +5,11 @@ services:
       dockerfile: backend/Dockerfile
     container_name: netcheck-app
     # host network: lets the app reach the scanner agent on 127.0.0.1 (Linux).
-    # The web server itself binds to 127.0.0.1 only, so it is NOT visible on the hotspot.
+    # By default the web server binds to 127.0.0.1 only, so it is NOT visible on the hotspot.
+    # LAN test mode (no login!): in .env set NETCHECK_BIND_HOST=0.0.0.0 and
+    # NETCHECK_ALLOWED_HOSTS=<pi name or IP>. The scanner agent always stays on 127.0.0.1.
     network_mode: host
+    command: ["uvicorn", "netcheck.api.app:app", "--host", "${NETCHECK_BIND_HOST:-127.0.0.1}", "--port", "8001"]
     env_file:
       - path: .env
         required: false
