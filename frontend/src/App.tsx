@@ -2,6 +2,8 @@
 // then Dashboard (the jury's hands-on task: "most dangerous device + what to do first").
 // Ajar (AjarDock) is rendered once, outside every page, so it never disappears.
 import { useEffect, useState } from "react";
+import { switchDemo } from "./api/client";
+import LanguageToggle from "./components/LanguageToggle";
 import MobileHeader from "./components/MobileHeader";
 import { useIsMobile } from "./lib/useIsMobile";
 import { useMobilePoller } from "./lib/useMobilePoller";
@@ -17,6 +19,7 @@ import Dashboard from "./pages/Dashboard";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import History from "./pages/History";
+import Report from "./pages/Report";
 import Scan from "./pages/Scan";
 import ScanProgress from "./pages/ScanProgress";
 import Welcome from "./pages/Welcome";
@@ -37,6 +40,15 @@ function Shell() {
   let content: JSX.Element;
   if (!ready) {
     content = <div className="loading muted">{t("common.loading")}</div>;
+  } else if (app.loadFailed) {
+    content = <main className="page">
+      <LanguageToggle />
+      <ErrorBanner>{t("common.backendError")}</ErrorBanner>
+      <div className="row">
+        <button className="button primary" onClick={() => window.location.reload()}>{t("common.retry")}</button>
+        <button className="button" onClick={() => switchDemo(true)}>{t("common.openDemo")}</button>
+      </div>
+    </main>;
   } else if (scanning) {
     content = <ScanProgress />;
   } else if (!scan && (route.name === "home" || route.name === "dashboard")) {
@@ -71,6 +83,9 @@ function Shell() {
         case "ask":
           page = <Ask key={`${scan?.id}-${route.query ?? ""}`} />;
           break;
+        case "report":
+          page = <Report />;
+          break;
         default:
           page = <Dashboard />;
       }
@@ -101,11 +116,11 @@ function Shell() {
     <>
       {demo && ready && (
         <div className="demo-banner">
-          <ErrorBanner tone="info">{t("common.demo")}</ErrorBanner>
+          <ErrorBanner tone="info" action={<button className="link-button" onClick={() => switchDemo(false)}>{t("common.exitDemo")}</button>}>{t("common.demo")}</ErrorBanner>
         </div>
       )}
       {content}
-      {!isMobile && <AjarDock />}
+      {!isMobile && !app.loadFailed && <AjarDock />}
       {flow && <PermissionDialog key={flow} kind={flow} onAccept={acceptFlow} onCancel={cancelFlow} />}
       {showDesktopDialog && (
         <DesktopDialog onClose={() => setShowDesktopDialog(false)} />

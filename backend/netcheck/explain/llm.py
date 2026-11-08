@@ -71,6 +71,7 @@ class Answer:
     source: str                   # "scan" | "llm" | "fallback"
     grounded: bool                # False when the scan cannot answer the question
     problems: list = field(default_factory=list)
+    unavailable: bool = False
 
 
 # --------------------------------------------------------------------------- client
@@ -112,6 +113,9 @@ class LLMClient:
 
     @classmethod
     def from_config(cls) -> "LLMClient":
+        if config.QWEN_RUNTIME_DIR and not config.LLM_BASE_URL:
+            from .qwen import ManagedQwen
+            return ManagedQwen(config.QWEN_RUNTIME_DIR, config.LLM_TIMEOUT)
         return cls(config.LLM_BASE_URL, config.LLM_API_KEY, config.LLM_MODEL,
                    config.LLM_TIMEOUT)
 
@@ -135,6 +139,19 @@ class LLMClient:
         self._available, self._checked_at = ok, now
         return ok
 
+    def status(self) -> dict:
+        return {"available": self.available()}
+
+    def unload(self) -> bool:
+        # A separately configured endpoint belongs to its operator.
+        return True
+
+    def prepare_inference(self) -> bool:
+        return True
+
+    def can_personalize(self) -> bool:
+        return self.enabled
+
     def chat(self, system: str, user: str, json_mode: bool) -> Optional[str]:
         """Return the assistant text, or None on any error. Deterministic settings + cache."""
         if not self.enabled:
@@ -154,6 +171,8 @@ class LLMClient:
         with self._lock:
             if key in self._cache:
                 return self._cache[key]
+        if not self.prepare_inference():
+            return None
         try:
             with self._client(timeout=self.timeout) as c:
                 r = c.post("/chat/completions", json=body)
@@ -225,7 +244,7 @@ def personalize(client: LLMClient, finding: EvidenceFinding, base: StaticText,
     """Add one verified device label to the supplied, language-matched finding guidance."""
     lang = "en" if lang == "en" else "ro"
     static = Explanation(base.explanation, list(base.fixes), source="static")
-    if not client.enabled:
+    if not client.can_personalize():
         return static
     context = _select(client, "Select the most useful label for this finding: " + finding.code,
                       finding_contexts(finding, lang), 1)
@@ -249,7 +268,7 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
     if _SCORE_QUESTION.fullmatch(question.rstrip(" .!?")):
         return Answer(score_text(evidence.score, lang), "scan", grounded=True)
     if not client.enabled:
-        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False)
+        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False, unavailable=True)
     options = answer_options(evidence, question, ips, lang)
     if not options:
         return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
@@ -257,7 +276,7 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
         return Answer(_FALLBACK["narrow"][lang], "fallback", grounded=False)
     selected = _select(client, question, options, 4)
     if selected is None:
-        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False)
+        return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False, unavailable=True)
     if not selected:
         return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
     return Answer(" ".join(selected), "llm", grounded=True)

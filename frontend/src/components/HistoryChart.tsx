@@ -1,5 +1,5 @@
 // Score trend with labelled values on every bar (never colour alone).
-import type { HistoryItem } from "../api/proposedTypes";
+import type { HistoryItem } from "../api/types";
 import { formatDate } from "../i18n";
 import { useApp } from "../state/AppState";
 

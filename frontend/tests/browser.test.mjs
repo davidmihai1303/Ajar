@@ -7,7 +7,7 @@ const origin = "http://ajar.test";
 const dist = new URL("../dist/", import.meta.url);
 const network = { interface: "wlan0", subnet: "192.168.1.0/24", ssid: "Office A", gateway: null };
 const good = { id: "fixture", source: "import", file: "test.xml", created_at: "2026-11-07T12:00:00Z",
-  score: 100, ssid: network.ssid, subnet: network.subnet, error: null, devices: [], findings: [] };
+  score: 100, network_id: null, findings_available: true, ssid: network.ssid, subnet: network.subnet, error: null, devices: [], findings: [] };
 
 let browser;
 before(async () => { browser = await chromium.launch(); });
@@ -52,6 +52,46 @@ async function confirmNetwork(page) {
   await dialog.getByRole("button", { name: "Yes, scan" }).click();
 }
 
+test("Ask starts Qwen after consent, retries the original message, and unloads on turn off", async t => {
+  let state = "idle";
+  let release;
+  const questions = [];
+  let unloads = 0;
+  const page = await open(t, "ask", { async onApi(path, request) {
+    if (path === "/api/llm/status") return { json: {
+      available: state === "ready", state, ...(state === "failed" ? { reason: "memory" } : {}),
+    } };
+    if (path === "/api/llm/unload") { unloads++; return { status: 204 }; }
+    if (path === "/api/ask") {
+      questions.push(request.postDataJSON().question);
+      if (questions.length === 1) {
+        state = "starting";
+        await new Promise(resolve => { release = resolve; });
+        state = "failed";
+        return { json: { available: false, can_answer: false, answer: "Offline" } };
+      }
+      state = "ready";
+      return { json: { available: true, can_answer: true, answer: "Scan fixture answer" } };
+    }
+  } });
+  const question = "Which device needs attention?";
+  await page.getByRole("textbox").fill(question);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  assert.deepEqual(questions, []);
+  await page.getByRole("dialog").getByRole("button", { name: "Turn on the assistant" }).click();
+  await page.getByText("Starting local AI…").waitFor();
+  release();
+  await page.getByText(/Qwen ran out of GPU memory/).waitFor();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByText("Scan fixture answer").waitFor();
+  assert.deepEqual(questions, [question, question]);
+  assert.equal(await page.locator(".bubble-user").count(), 1);
+  assert.equal(await page.locator(".bubble-ajar").count(), 1);
+  await page.getByRole("button", { name: "Turn off the local assistant" }).click();
+  await page.getByRole("button", { name: "Turn it on" }).waitFor();
+  assert.equal(unloads, 1);
+});
+
 test("consent follows fresh detection and a change after consent requires another confirmation", async (t) => {
   let current = { ...network };
   const posts = [];
@@ -95,13 +135,16 @@ test("shows bilingual detection and dispatch refusals, including after a retry",
 for (const lang of ["en", "ro"]) {
   test(`offline demo disables XML import and describes only observed services (${lang})`, async (t) => {
     const page = await open(t, "scan", { offline: true, lang });
+    await page.getByRole("button", { name: lang === "en" ? "Try again" : "Încearcă din nou" }).waitFor();
+    assert.equal(await page.locator(".demo-banner").count(), 0);
+    await page.getByRole("button", { name: lang === "en" ? "Open demo" : "Deschide demonstrația" }).click();
     await page.getByText(lang === "en" ? /Demo mode shows example scans only/ : /Modul demonstrativ afișează doar exemple/).waitFor();
     assert.equal(await page.locator("input[type=file], .dropzone, .results").count(), 0);
     for (const [ip, evidence] of [
       ["172.20.10.5", lang === "en" ? /did not check whether viewing the stream/ : /Nu a verificat dacă accesul/],
       ["172.20.10.6", lang === "en" ? /did not check who can send commands/ : /Nu a verificat cine poate trimite/],
     ]) {
-      await page.goto(`${origin}/#/devices/${ip}`);
+      await page.goto(`${origin}/?demo=1#/devices/${ip}`);
       await page.locator(".finding-text").filter({ hasText: evidence }).waitFor();
     }
   });
@@ -114,6 +157,9 @@ test("an unreadable scan and a scan without a score never show the all-clear mes
     await page.getByText(error ? /file couldn't be read/ : /This scan has no score/).waitFor();
     assert.equal(await page.locator(".fix-first, section[aria-label='By severity']").count(), 0);
   }
+  const legacy = await open(t, "dashboard", { scan: { ...good, score: 85, findings_available: false } });
+  await legacy.getByText(/finding details are unavailable/).waitFor();
+  assert.equal(await legacy.locator(".fix-first").count(), 0);
   const page = await open(t, "dashboard");
   await page.getByText("Ajar found no problems in this scan.").waitFor();
 });
@@ -140,6 +186,71 @@ test("import and history protect filenames, including failures with no API respo
   await page.goto(origin + "/#/history");
   await page.locator("summary").filter({ hasText: "All scans" }).click();
   await page.getByText(/office-50:C7:BF:xx:xx:xx.xml/).waitFor();
+});
+
+test("a delayed scan selection cannot restore deleted history", async (t) => {
+  const older = { ...good, id: "old", created_at: "2026-11-05T12:00:00Z", score: 80 };
+  let finish;
+  const delayed = new Promise((resolve) => { finish = resolve; });
+  const page = await open(t, "dashboard", { onApi(path, req) {
+    if (path === "/api/history") return req.method() === "DELETE" ? { status: 204 } : { json: [good, older] };
+    if (path === "/api/scans/old") return delayed;
+  } });
+  const reading = page.waitForRequest("**/api/scans/old");
+  await page.locator(".sidebar-recent").nth(1).click();
+  await reading;
+  await page.locator('a[href="#/history"]').first().click();
+  await page.getByRole("button", { name: "Delete my history" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete history" }).click();
+  await page.locator(".welcome").waitFor();
+  const received = page.waitForResponse("**/api/scans/old");
+  finish({ json: older });
+  await (await received).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator(".welcome").count(), 1);
+  assert.equal(await page.locator(".score-number").count(), 0);
+});
+
+test("the last selected scan stays on screen when earlier requests finish later", async (t) => {
+  const older = { ...good, id: "old", created_at: "2026-11-05T12:00:00Z", score: 80 };
+  let finish;
+  const delayed = new Promise(resolve => { finish = resolve; });
+  const page = await open(t, "dashboard", { onApi(path) {
+    if (path === "/api/history") return { json: [good, older] };
+    if (path === "/api/scans/old") return delayed;
+  } });
+  const reading = page.waitForRequest("**/api/scans/old");
+  await page.locator(".sidebar-recent").nth(1).click();
+  await reading;
+  const selected = page.waitForResponse("**/api/scans/fixture");
+  await page.locator(".sidebar-recent").first().click();
+  await (await selected).finished();
+  const stale = page.waitForResponse("**/api/scans/old");
+  finish({ json: older });
+  await (await stale).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator(".score-number").innerText(), "100");
+});
+
+test("history automatically compares only scans of the same known network", async (t) => {
+  const now = { ...good, id: "current", source: "live", network_id: "A", ssid: "Office" };
+  const guest = { ...now, id: "guest", network_id: "B", score: 20, created_at: "2026-11-06T12:00:00Z" };
+  const previous = { ...now, id: "previous", score: 80, created_at: "2026-11-05T12:00:00Z" };
+  for (const items of [[now, guest], [now, guest, previous]]) {
+    const comparisons = [];
+    const page = await open(t, "history", { scan: now, onApi(path, request) {
+      if (path === "/api/history") return { json: items };
+      if (path === "/api/history/diff") comparisons.push(new URL(request.url()).searchParams.get("from"));
+    } });
+    const lead = await page.locator(".history-lead").innerText();
+    if (items.length === 2) {
+      assert.match(lead, /two assessed scans/);
+      assert.deepEqual(comparisons, []);
+    } else {
+      assert.match(lead, /80 to 100/);
+      assert.ok(!comparisons.includes("guest"));
+    }
+  }
 });
 
 test("a failed history deletion can be retried and a 204 clears the view", async (t) => {
@@ -207,4 +318,63 @@ test("revoking the local assistant in another tab discards a pending reply", asy
   finish({ json: { available: true, can_answer: true, answer: "Late reply" } });
   assert.equal(await question.isDisabled(), true);
   assert.equal(await page.getByText("Late reply").count(), 0);
+});
+
+const risky = {
+  ...good, id: "risky", score: 70,
+  devices: [
+    { ip: "192.168.1.1", mac_masked: "50:C7:BF:xx:xx:xx", vendor: "TP-Link", hostname: null, device_type: "router",
+      ports: [{ port: 80, protocol: "tcp", service: "http", product: null, version: null, http_title: "<img src=x onerror=alert(1)>", tunnel: null }] },
+    { ip: "192.168.1.99", mac_masked: null, vendor: null, hostname: null, device_type: "unknown",
+      ports: [{ port: 23, protocol: "tcp", service: "telnet", product: null, version: null, http_title: null, tunnel: null }] },
+  ],
+  findings: [
+    { code: "HTTP_ADMIN_CLEARTEXT", severity: "medium", points: 10, ip: "192.168.1.1", port: 80, protocol: "tcp", evidence: "tcp/80 http: <img src=x onerror=alert(1)>" },
+    { code: "TELNET_OPEN", severity: "high", points: 20, ip: "192.168.1.99", port: 23, protocol: "tcp", evidence: "tcp/23 telnet" },
+  ],
+};
+const explainReply = (path) => {
+  if (!path.startsWith("/api/explain/")) return;
+  const code = decodeURIComponent(path.split("/")[3]);
+  return { json: { code, lang: "en", title: `Title ${code}`, explanation: `Why ${code}.`, steps: [`Step one for ${code}`, "Scan again"] } };
+};
+
+test("the report lists the most dangerous device first, with fixes, references and escaped evidence", async (t) => {
+  const page = await open(t, "report", { scan: risky, onApi: explainReply });
+  await page.getByRole("heading", { name: "Network safety report" }).waitFor();
+  const items = page.locator(".report-finding");
+  await items.nth(1).getByText("Title HTTP_ADMIN_CLEARTEXT").waitFor();
+  assert.equal(await items.count(), 2);
+  assert.match(await items.nth(0).innerText(), /Title TELNET_OPEN[\s\S]*Unknown device[\s\S]*Step one for TELNET_OPEN/);
+  assert.match(await items.nth(1).innerText(), /CIS 3\.10 · OWASP IoT I3 · OWASP IoT I7/);
+  assert.match(await items.nth(1).innerText(), /<img src=x onerror=alert\(1\)>/);
+  assert.equal(await page.locator(".report img").count(), 0);
+  assert.match(await page.locator(".report table").innerText(), /50:C7:BF:xx:xx:xx/);
+  assert.match(await page.locator(".report-summary").innerText(), /70/);
+
+  await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
+  await page.getByRole("button", { name: "Print or save as PDF" }).click();
+  assert.equal(await page.evaluate(() => window.__printed), 1);
+
+  await page.emulateMedia({ media: "print" });
+  assert.equal(await page.locator(".sidebar").isVisible(), false);
+  assert.equal(await page.getByRole("button", { name: "Print or save as PDF" }).isVisible(), false);
+});
+
+test("the dashboard links to the report and finding details show the standards in Romanian", async (t) => {
+  const page = await open(t, "dashboard", { scan: risky, lang: "ro", onApi: explainReply });
+  await page.getByRole("link", { name: "Raport pentru omul tău de IT" }).click();
+  await page.getByRole("heading", { name: "Raport despre siguranța rețelei" }).waitFor();
+
+  const devices = await open(t, "devices/192.168.1.99", { scan: risky, lang: "ro", onApi: explainReply });
+  await devices.getByText("Detalii tehnice").first().click();
+  await devices.getByText("Standarde:").first().waitFor();
+  assert.match(await devices.locator(".references").first().innerText(), /CIS 4\.8 · CIS 3\.10 · OWASP IoT I2 · OWASP IoT I7/);
+});
+
+test("an unreadable scan has no report", async (t) => {
+  const broken = { ...good, id: "broken", score: null, error: "unreadable", findings_available: false };
+  const page = await open(t, "report", { scan: broken });
+  await page.getByText("This scan's file couldn't be read.").waitFor();
+  assert.equal(await page.locator(".report").count(), 0);
 });

@@ -18,7 +18,8 @@ def write_findings(conn: sqlite3.Connection, scan_id: str, findings: Sequence[Fi
 
 def read_scan(conn: sqlite3.Connection, scan_id: str) -> ScanRecord | None:
     scan_row = conn.execute(
-        "SELECT scan_id, created_at, file_name, score, error, started, findings_available FROM scans WHERE scan_id = ?",
+        """SELECT s.*, o.source, o.ssid, o.subnet, o.network_id FROM scans s
+           LEFT JOIN scan_origin o USING (scan_id) WHERE s.scan_id = ?""",
         (scan_id,),
     ).fetchone()
 
@@ -108,5 +109,6 @@ def read_scan(conn: sqlite3.Connection, scan_id: str) -> ScanRecord | None:
         score=scan_row["score"],
         created_at=scan_row["created_at"],
         scan_id=scan_row["scan_id"],
-        findings_available=bool(scan_row["findings_available"]),
+        source=scan_row["source"], ssid=scan_row["ssid"], subnet=scan_row["subnet"],
+        network_id=scan_row["network_id"], findings_available=bool(scan_row["findings_available"]),
     )

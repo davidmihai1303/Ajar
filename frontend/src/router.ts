@@ -1,4 +1,4 @@
-// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask.
+// Minimal hash router: #/dashboard, #/devices, #/devices/<ip>, #/scan, #/history, #/ask, #/report.
 import { useEffect, useState } from "react";
 
 export type Route =
@@ -8,7 +8,8 @@ export type Route =
   | { name: "device"; ip: string }
   | { name: "scan" }
   | { name: "history" }
-  | { name: "ask"; query?: string };
+  | { name: "ask"; query?: string }
+  | { name: "report" };
 
 export function parseRoute(hash: string): Route {
   const [pathPart, queryPart] = hash.replace(/^#\/?/, "").split("?");
@@ -25,6 +26,8 @@ export function parseRoute(hash: string): Route {
       return { name: "history" };
     case "ask":
       return { name: "ask", query: search.get("q") ?? undefined };
+    case "report":
+      return { name: "report" };
     default:
       return { name: "home" };
   }

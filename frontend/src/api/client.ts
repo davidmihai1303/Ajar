@@ -1,7 +1,7 @@
 // Typed fetch helpers for /api/* (network, scans, history, explain, ask).
-// When the backend can't be reached the app switches to demo data and says so on screen.
+// Example data is available only after an explicit demo selection.
 import { demoAsk, demoDiff, demoExplanation, demoHistory, demoNetwork, demoScans } from "./demo";
-import type { AskResponse, Explanation, HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./proposedTypes";
+import type { AskResponse, Explanation, Finding, HistoryItem, ImportResult, Lang, ModelStatus, NetworkInfo, Scan, ScanDiff, ScanRefusal } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-let demo = false;
+const demo = new URLSearchParams(window.location.search).get("demo") === "1";
 export const isDemo = () => demo;
 
 async function checkedResponse(path: string, init?: RequestInit): Promise<Response> {
@@ -35,15 +35,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-/** Decides once, at start-up, whether a backend answers. */
-export async function connect(): Promise<boolean> {
-  try {
-    await request<HistoryItem[]>("/api/history");
-    demo = false;
-  } catch {
-    demo = true;
-  }
-  return !demo;
+export function switchDemo(enabled: boolean) {
+  const location = new URL(window.location.href);
+  if (enabled) location.searchParams.set("demo", "1");
+  else location.searchParams.delete("demo");
+  window.location.assign(location.href);
 }
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -56,7 +52,8 @@ export const api = {
   network: async (): Promise<NetworkInfo> => {
     const info = demo ? demoNetwork : await request<NetworkInfo>("/api/network");
     if (!info.interface || !info.subnet) throw new ApiError("Incomplete network", 502);
-    return { interface: info.interface, subnet: info.subnet, gateway: info.gateway || null, ssid: info.ssid || null };
+    return { interface: info.interface, subnet: info.subnet, gateway: info.gateway || null, ssid: info.ssid || null,
+      ...(info.confirmation_id ? { confirmation_id: info.confirmation_id } : {}) };
   },
 
   history: (): Promise<HistoryItem[]> => (demo ? Promise.resolve(demoHasHistory ? demoHistory() : []) : request("/api/history")),
@@ -97,8 +94,33 @@ export const api = {
     await checkedResponse("/api/history", { method: "DELETE" });
   },
 
-  explain: (code: string, lang: Lang): Promise<Explanation> =>
-    demo ? Promise.resolve(demoExplanation(code, lang)) : request(`/api/explain/${encodeURIComponent(code)}?lang=${lang}`),
+  explain: (code: string, lang: Lang, scanId?: string, finding?: Finding): Promise<Explanation> => {
+    if (demo) return Promise.resolve(demoExplanation(code, lang));
+    const query = new URLSearchParams({ lang });
+    if (scanId && finding) {
+      query.set("scan_id", scanId);
+      query.set("ip", finding.ip);
+      if (finding.port !== null) query.set("port", String(finding.port));
+      if (finding.protocol) query.set("protocol", finding.protocol);
+    }
+    return request(`/api/explain/${encodeURIComponent(code)}?${query}`);
+  },
+
+  personalize: (scanId: string, finding: Finding, lang: Lang, signal: AbortSignal): Promise<Explanation> => {
+    if (demo) return Promise.resolve(demoExplanation(finding.code, lang));
+    const { code, ip, port, protocol } = finding;
+    return request(`/api/explain/${encodeURIComponent(code)}/personalize`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal,
+      body: JSON.stringify({ scan_id: scanId, code, ip, port, protocol, lang }),
+    });
+  },
+
+  modelStatus: (signal: AbortSignal): Promise<ModelStatus> =>
+    demo ? Promise.resolve({ available: false }) : request("/api/llm/status", { signal }),
+
+  unloadModel: async (): Promise<void> => {
+    if (!demo) await checkedResponse("/api/llm/unload", { method: "POST" });
+  },
 
   ask: (scanId: string, question: string, lang: Lang, signal?: AbortSignal): Promise<AskResponse> =>
     demo

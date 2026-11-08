@@ -1,18 +1,19 @@
 // Score + level. Colour is never the only signal (icon + text label).
-import type { Severity } from "../api/proposedTypes";
-import { scoreLevel } from "../lib/scan";
+import type { Scan, Severity } from "../api/types";
+import { assessment } from "../lib/scan";
 import { useApp } from "../state/AppState";
 
-const LEVEL_ICON = { safe: "✓", attention: "●", risky: "▲", unknown: "?" } as const;
+const LEVEL_ICON = { clear: "✓", high: "▲", medium: "●", low: "◆", info: "i", unknown: "?" } as const;
 
-export default function ScoreBadge({ score, size = "large" }: { score: number | null; size?: "large" | "small" }) {
+export default function ScoreBadge({ scan, size = "large" }: { scan: Scan; size?: "large" | "small" }) {
   const { t } = useApp();
-  const level = scoreLevel(score);
+  const level = assessment(scan);
+  const score = scan.score;
   if (size === "small") {
     return (
       <span className="score-small">
         <span className="serif">{score ?? "—"}</span>
-        <span>{t(`score.level.${level}`)}</span>
+        <span>{t(`assessment.${level}`)}</span>
       </span>
     );
   }
@@ -20,9 +21,9 @@ export default function ScoreBadge({ score, size = "large" }: { score: number | 
     <div className="score-large">
       <span className={`serif score-number text-${level}`}>{score ?? "—"}</span>
       <div className="score-meta">
-        <span className={`chip level-${level}`}>
+        <span className={`chip sev-${level}`}>
           <span aria-hidden="true">{LEVEL_ICON[level]}</span>
-          {t(`score.level.${level}`)}
+          {t(`assessment.${level}`)}
         </span>
         <span className="muted">{t("score.of100")}</span>
       </div>

@@ -85,6 +85,13 @@ def save_scan(
              bool(record.created_at or scan_time)),
         )
 
+        if record.source is not None:
+            conn.execute("""INSERT INTO scan_origin (scan_id, source, ssid, subnet, network_id)
+                            VALUES (?, ?, ?, ?, ?) ON CONFLICT(scan_id) DO UPDATE SET
+                            source=excluded.source, ssid=excluded.ssid,
+                            subnet=excluded.subnet, network_id=excluded.network_id""",
+                         (sid, record.source, record.ssid, record.subnet, record.network_id))
+
         # Delete existing child rows if updating/replacing
         conn.execute("DELETE FROM devices WHERE scan_id = ?", (sid,))
         conn.execute("DELETE FROM ports WHERE scan_id = ?", (sid,))
@@ -136,10 +143,10 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
                 s.created_at,
                 s.file_name,
                 s.score,
-                s.error,
+                s.error, s.findings_available, o.source, o.ssid, o.subnet, o.network_id,
                 (SELECT COUNT(DISTINCT d.ip) FROM devices d WHERE d.scan_id = s.scan_id) AS device_count,
                 (SELECT COUNT(*) FROM findings f WHERE f.scan_id = s.scan_id) AS finding_count
-            FROM scans s
+            FROM scans s LEFT JOIN scan_origin o USING (scan_id)
             ORDER BY s.created_at DESC, s.rowid DESC
             """
         ).fetchall()
@@ -151,6 +158,8 @@ def list_scans(db_path: str = DB_PATH) -> list[dict]:
                 "file_name": r["file_name"],
                 "score": r["score"],
                 "error": r["error"],
+                "source": r["source"], "ssid": r["ssid"], "subnet": r["subnet"],
+                "network_id": r["network_id"], "findings_available": bool(r["findings_available"]),
                 "device_count": r["device_count"],
                 "finding_count": r["finding_count"],
             }

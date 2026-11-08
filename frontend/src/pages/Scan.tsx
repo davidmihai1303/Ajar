@@ -1,6 +1,6 @@
 // Start a live scan of the detected network, or analyse nmap XML files offline.
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import type { ImportResult } from "../api/proposedTypes";
+import type { ImportResult } from "../api/types";
 import { href } from "../router";
 import { publicFilename } from "../lib/filename";
 import { useApp } from "../state/AppState";

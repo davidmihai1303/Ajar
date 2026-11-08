@@ -1,0 +1,40 @@
+services:
+  app:
+    image: ajar/app:offline
+    user: "${AJAR_UID:-1000}:${AJAR_GID:-1000}"
+    environment:
+      AJAR_QWEN_RUNTIME: /run/ajar-model
+    volumes:
+      - ./data/qwen:/run/ajar-model:ro
+
+  llama-server:
+    image: ajar/llama:b12182
+    platform: linux/amd64
+    user: "${AJAR_UID:-1000}:${AJAR_GID:-1000}"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    environment:
+      HOME: /tmp
+    volumes:
+      - ./models:/models:ro
+      - ./runtime/qwen:/etc/ajar:ro
+      - ./data/qwen:/run/ajar-model
+    entrypoint: [/bin/sh, /etc/ajar/router.sh]
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [model]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+networks:
+  model:
+    internal: true

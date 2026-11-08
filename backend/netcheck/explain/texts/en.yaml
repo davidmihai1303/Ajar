@@ -1,6 +1,108 @@
-# EN texts per finding code. explanation: max 2 sentences, no jargon. fixes: 1-5 ordered steps.
-# TODO: fill in all 15 codes.
 TELNET_OPEN:
-  title: ""
-  explanation: ""
-  fixes: []
+  title: "Unencrypted remote login"
+  explanation: "This device offers Telnet for remote login. If you use it, someone on the network could read your password."
+  fixes:
+    - "Open the device’s administration settings."
+    - "Turn off Telnet."
+    - "If you need remote login, enable SSH instead."
+RDP_EXPOSED:
+  title: "Remote Desktop is reachable"
+  explanation: "The network can reach a service used to control a computer remotely. Check who is allowed to connect."
+  fixes:
+    - "Open Remote Desktop settings on the computer."
+    - "Turn it off if unused, or restrict access to the accounts and computers you trust."
+VNC_EXPOSED:
+  title: "Screen sharing is reachable"
+  explanation: "This device offers screen sharing through VNC. The scan could not tell who can view or control the screen."
+  fixes:
+    - "Open the device’s screen-sharing settings."
+    - "Turn sharing off if unused."
+    - "If needed, require sign-in and allow only trusted users."
+DB_EXPOSED:
+  title: "A database is reachable"
+  explanation: "A service that stores data accepts connections from this network. The scan did not check whether anyone can read the data."
+  fixes:
+    - "Open the database connection settings."
+    - "Allow connections only from the application that needs the data."
+    - "Require sign-in for that application."
+CAMERA_STREAM_EXPOSED:
+  title: "A media streaming service is reachable"
+  explanation: "The scan found a service used to share audio or video. It did not check whether playing the stream requires a password."
+  fixes:
+    - "Open the device’s media-sharing settings."
+    - "Turn off streaming if unused, or limit who can connect."
+OUTDATED_SERVICE:
+  title: "A service reports an old version"
+  explanation: "The version reported by this service matches the list of outdated software. Check whether the maker offers an update."
+  fixes:
+    - "Open the device or application update settings."
+    - "Install the update recommended by the maker."
+    - "Scan again and check the reported version."
+FTP_CLEARTEXT:
+  title: "An FTP file service is reachable"
+  explanation: "This device offers FTP for file transfers. Plain FTP can expose passwords and files to others on the network."
+  fixes:
+    - "Open the file-sharing settings."
+    - "Turn FTP off if unused."
+    - "For private transfers, choose an encrypted option such as SFTP."
+HTTP_ADMIN_CLEARTEXT:
+  title: "A settings page uses plain HTTP"
+  explanation: "The scan found a page that looks like a settings or login page. A password entered over plain HTTP could be read on the network."
+  fixes:
+    - "Open the device’s administration settings."
+    - "Enable HTTPS if available."
+    - "Use the HTTPS address and disable plain HTTP access."
+SMB_EXPOSED:
+  title: "File sharing is reachable"
+  explanation: "Devices on this network can reach a file-sharing service. Check which folders are shared and who can open them."
+  fixes:
+    - "Open the shared-folder settings."
+    - "Remove folders you no longer need to share."
+    - "Give access only to the accounts that need it."
+MQTT_EXPOSED:
+  title: "A smart-device messaging service is reachable"
+  explanation: "The scan found MQTT, the service smart devices use to exchange messages. It did not check who can send commands."
+  fixes:
+    - "Open the hub’s MQTT settings."
+    - "Check which devices can send messages."
+    - "If anonymous access is allowed, turn it off."
+UPNP_EXPOSED:
+  title: "Automatic network setup is reachable"
+  explanation: "The device offers UPnP, a feature used for automatic network setup. On a router this may let applications request connections from the internet."
+  fixes:
+    - "Open the device’s network settings."
+    - "Find UPnP and turn it off if your applications do not need it."
+SNMP_EXPOSED:
+  title: "Network monitoring is reachable"
+  explanation: "This device offers SNMP, a service used to read device information. Check which computers are allowed to use it."
+  fixes:
+    - "Open the network monitoring settings."
+    - "Turn off SNMP if unused."
+    - "If needed, allow only your monitoring computer and use SNMPv3 with encryption."
+PRINTER_RAW_EXPOSED:
+  title: "Direct printing is reachable"
+  explanation: "This printer accepts direct network connections for print jobs. Check whether this printing method is needed."
+  fixes:
+    - "Open the printer’s network settings."
+    - "Find direct printing, sometimes called RAW or JetDirect."
+    - "Disable it if unused, or limit access to trusted computers."
+UNKNOWN_DEVICE:
+  title: "A device could not be identified"
+  explanation: "This device has a reachable service, but the scan found no maker or device name. Check whether it belongs on your network."
+  fixes:
+    - "Open your router’s connected-device list."
+    - "Compare the address with your own devices."
+    - "If you confirm an unwanted device, remove its Wi-Fi access."
+SSH_OPEN:
+  title: "Encrypted remote login is reachable"
+  explanation: "This device offers SSH for encrypted remote login. This can be expected if you administer it remotely."
+  fixes:
+    - "Check whether you use remote login."
+    - "Turn off SSH if unused, or restrict access to the people who administer the device."
+CAMERA_STREAM_EXPOSED.camera:
+  title: "The camera’s video service is reachable"
+  explanation: "The scan found the service the camera uses to stream video. It did not check who can watch the stream."
+  fixes:
+    - "Open the camera’s video settings."
+    - "Check who can watch the stream."
+    - "Require sign-in or turn off a stream you do not need."

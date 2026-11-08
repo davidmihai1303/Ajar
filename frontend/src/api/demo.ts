@@ -1,6 +1,6 @@
 // Demo data, used only when the backend is not reachable (the UI says so in a banner).
 // Values follow the catalog rules so the screens show realistic findings and scores.
-import type { AskResponse, Device, Explanation, Finding, HistoryItem, Lang, NetworkInfo, Scan, ScanDiff } from "./proposedTypes";
+import type { AskResponse, Device, Explanation, Finding, HistoryItem, Lang, NetworkInfo, Scan, ScanDiff } from "./types";
 
 export const demoNetwork: NetworkInfo = {
   ssid: "RSH-07",
@@ -107,6 +107,8 @@ const build = (id: string, created_at: string, source: Scan["source"], file: str
   created_at,
   source,
   file,
+  network_id: source === "live" ? "demo-hotspot" : null,
+  findings_available: true,
   ssid: "RSH-07",
   subnet: "172.20.10.0/28",
   score: score(findings),
@@ -128,6 +130,7 @@ export const demoHistory = (): HistoryItem[] =>
     created_at: scan.created_at,
     source: scan.source,
     file: scan.file,
+    findings_available: scan.findings_available, network_id: scan.network_id, subnet: scan.subnet, error: scan.error,
     ssid: scan.ssid,
     score: scan.score,
     device_count: scan.devices.length,

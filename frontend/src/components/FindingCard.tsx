@@ -2,7 +2,8 @@
 // Evidence is untrusted text from the scan: rendered as plain text only (React escapes it).
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Device, Explanation, Finding } from "../api/proposedTypes";
+import type { Device, Explanation, Finding } from "../api/types";
+import { referencesFor } from "../lib/references";
 import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
@@ -17,7 +18,7 @@ export default function FindingCard({
   onRescan,
 }: {
   finding: Finding;
-  deviceName: string;
+  deviceName?: string;
   device?: Device;
   showDevice?: boolean;
   onRescan?: () => void;
@@ -26,7 +27,7 @@ export default function FindingCard({
   const isMobile = useIsMobile();
   const [text, setText] = useState<Explanation | null>(null);
   const [rephrased, setRephrased] = useState<string | null>(null);
-  const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off" | "noAnswer">("idle");
+  const [rephraseState, setRephraseState] = useState<"idle" | "loading" | "off">("idle");
   const active = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -36,18 +37,19 @@ export default function FindingCard({
       active.current?.abort();
       active.current = null;
     };
-  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, lang]);
+  }, [aiConsent, scan?.id, finding.code, finding.ip, finding.port, finding.protocol, lang]);
 
   useEffect(() => {
     let alive = true;
+    setText(null);
     api
-      .explain(finding.code, lang)
+      .explain(finding.code, lang, scan?.id, finding)
       .then((value) => alive && setText(value))
       .catch(() => alive && setText(null));
     return () => {
       alive = false;
     };
-  }, [finding.code, lang]);
+  }, [finding, scan?.id, lang]);
 
   const rephrase = async () => {
     if (!scan || aiConsent !== true) {
@@ -59,15 +61,10 @@ export default function FindingCard({
     active.current = controller;
     setRephraseState("loading");
     try {
-      const question = t("finding.rephraseQuestion", { code: finding.code, device: deviceName, ip: finding.ip });
-      const answer = await api.ask(scan.id, question, lang, controller.signal);
+      const answer = await api.personalize(scan.id, finding, lang, controller.signal);
       if (controller.signal.aborted) return;
-      if (!answer.available) setRephraseState("off");
-      else if (!answer.can_answer || !answer.answer) setRephraseState("noAnswer");
-      else {
-        setRephrased(answer.answer);
-        setRephraseState("idle");
-      }
+      setRephrased(answer.explanation);
+      setRephraseState("idle");
     } catch {
       if (!controller.signal.aborted) setRephraseState("off");
     } finally {
@@ -77,7 +74,7 @@ export default function FindingCard({
 
   const askPrompt = t("finding.rephraseQuestion", {
     code: finding.code,
-    device: deviceName,
+    device: deviceName ?? finding.ip,
     ip: finding.ip,
   });
 
@@ -135,14 +132,33 @@ export default function FindingCard({
           )}
         </div>
         {!isMobile && rephraseState === "off" && <span className="muted">{t("finding.assistantOff")}</span>}
-        {!isMobile && rephraseState === "noAnswer" && <span className="muted">{t("ask.cannotAnswer")}</span>}
         <details className="tech">
           <summary>{t("common.technical")}</summary>
           <p className="mono">
             {finding.code} · {finding.port === null ? t("finding.noPort") : `${finding.protocol}/${finding.port}`} · {finding.evidence}
           </p>
+          <References code={finding.code} />
         </details>
       </div>
     </article>
   );
 }
+
+/** CIS Controls v8 / OWASP IoT Top 10 references, used here and in the printable report. */
+export function References({ code }: { code: string }) {
+  const { t } = useApp();
+  const refs = referencesFor(code);
+  if (refs.length === 0) return null;
+  return (
+    <p className="references">
+      <span className="muted">{t("finding.references")}</span>{" "}
+      {refs.map((ref, index) => (
+        <span key={ref.id}>
+          {index > 0 && " · "}
+          <abbr title={ref.name}>{ref.id}</abbr>
+        </span>
+      ))}
+    </p>
+  );
+}
+

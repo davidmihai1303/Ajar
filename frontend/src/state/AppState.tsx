@@ -1,9 +1,10 @@
 // App-wide state: language, current scan, history, the live-scan flow and where Ajar stands.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ApiError, api, connect, isDemo } from "../api/client";
-import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } from "../api/proposedTypes";
+import { ApiError, api, isDemo } from "../api/client";
+import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } from "../api/types";
 import { makeT, type TFunction } from "../i18n";
 import { playAlertChime } from "../lib/audioAlert";
+import { previousComparable } from "../lib/scan";
 import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
@@ -37,6 +38,7 @@ interface AppState {
   setLang: (lang: Lang) => void;
   t: TFunction;
   ready: boolean;
+  loadFailed: boolean;
   demo: boolean;
   network: NetworkInfo | null;
   consentNetwork: NetworkInfo | null;
@@ -78,6 +80,10 @@ export function useApp(): AppState {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => (store.get("ajar.lang") === "en" ? "en" : "ro"));
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const historyRequest = useRef(0);
+  const selectionRequest = useRef(0);
+  const deletion = useRef(0);
   const [network, setNetwork] = useState<NetworkInfo | null>(null);
   const [consentNetwork, setConsentNetwork] = useState<NetworkInfo | null>(null);
   const preparingConsent = useRef(false);
@@ -244,24 +250,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadHistory = useCallback(async (): Promise<HistoryItem[]> => {
+    const version = ++historyRequest.current;
     const items = [...(await api.history())].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    if (version !== historyRequest.current) return [];
     setHistory(items);
     return items;
   }, []);
 
   const selectScan = useCallback(async (id: string) => {
-    setScan(await api.scan(id));
+    const version = ++selectionRequest.current;
+    try {
+      const selected = await api.scan(id);
+      if (version === selectionRequest.current) {
+        setScan(selected);
+        setLoadFailed(false);
+      }
+    } catch {
+      if (version === selectionRequest.current) setLoadFailed(true);
+    }
   }, []);
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      await connect();
-      const items = await loadHistory().catch(() => [] as HistoryItem[]);
-      const latest = items.find((item) => item.score !== null) ?? items[0];
-      if (latest) await selectScan(latest.id).catch(() => undefined);
-      await refreshNetwork();
-      setReady(true);
+      try {
+        const items = await loadHistory();
+        if (!active) return;
+        const latest = items.find((item) => item.score !== null) ?? items[0];
+        if (latest) await selectScan(latest.id);
+        if (active) await refreshNetwork();
+      } catch {
+        if (active) setLoadFailed(true);
+      } finally {
+        if (active) setReady(true);
+      }
     })();
+    return () => { active = false; };
   }, [loadHistory, refreshNetwork, selectScan]);
 
   const openDialog = useCallback(() => {
@@ -272,8 +296,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const notifyChanges = useCallback(
     async (previousId: string | undefined, next: Scan) => {
       if (!previousId || !notificationsEnabled) return;
+      const generation = deletion.current;
       try {
         const diff = await api.diff(previousId, next.id);
+        if (generation !== deletion.current) return;
         if (diff.devices_added.length || diff.ports_opened.length) {
           playAlertChime();
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -299,20 +325,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setConsentNetwork(null);
     setScanProblem(null);
     setScanning(true);
-    const previousId = history[0]?.id;
+    const generation = deletion.current;
     try {
       const current = await refreshNetwork();
       if (!current || current.interface !== consentNetwork.interface || current.subnet !== consentNetwork.subnet ||
-          current.gateway !== consentNetwork.gateway || current.ssid !== consentNetwork.ssid) {
+          current.gateway !== consentNetwork.gateway || current.ssid !== consentNetwork.ssid ||
+          current.confirmation_id !== consentNetwork.confirmation_id) {
         if (current) setScanProblem({ kind: "changed" });
         navigate({ name: "scan" });
         return;
       }
       const result = await api.startScan(consentNetwork);
+      if (generation !== deletion.current) return;
+      selectionRequest.current++;
       setScan(result);
-      await loadHistory().catch(() => undefined);
+      const items = await loadHistory().catch(() => []);
+      if (generation !== deletion.current) return;
       navigate({ name: "dashboard" });
-      void notifyChanges(previousId, result);
+      void notifyChanges(previousComparable(items, result)?.id, result);
       if (notificationsEnabled) {
         playAlertChime();
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -339,7 +369,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setScanning(false);
     }
-  }, [consentNetwork, history, loadHistory, notifyChanges, refreshNetwork]);
+  }, [consentNetwork, loadHistory, notificationsEnabled, notifyChanges, refreshNetwork, t]);
 
   const startScanFlow = useCallback(async () => {
     if (preparingConsent.current) return;
@@ -379,10 +409,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const importFiles = useCallback(
     async (files: File[]) => {
+      const generation = deletion.current;
+      const selection = selectionRequest.current;
       const results = await api.importFiles(files);
+      if (generation !== deletion.current) return [];
       // Preserve the import response even if the follow-up history request fails.
       const items = await loadHistory().catch(() => []);
-      const lastGood = [...results].reverse().find((item) => item.scan_id);
+      if (generation !== deletion.current || selection !== selectionRequest.current) return results;
+      const lastGood = [...results].reverse().find((item) => !item.error && item.scan_id);
       if (lastGood?.scan_id) await selectScan(lastGood.scan_id).catch(() => undefined);
       else if (!scanRef.current && items[0]) await selectScan(items[0].id).catch(() => undefined);
       return results;
@@ -392,6 +426,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteHistory = useCallback(async () => {
     await api.deleteHistory();
+    deletion.current++;
+    historyRequest.current++;
+    selectionRequest.current++;
+    setLoadFailed(false);
+    setBubble(null);
     setHistory([]);
     setScan(null);
     navigate({ name: "home" });
@@ -404,6 +443,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLang,
     t,
     ready,
+    loadFailed,
     demo: isDemo(),
     network,
     consentNetwork,

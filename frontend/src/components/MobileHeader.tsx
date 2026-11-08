@@ -1,4 +1,4 @@
-import { scoreLevel } from "../lib/scan";
+import { assessment } from "../lib/scan";
 import { useApp } from "../state/AppState";
 import { IconShield } from "./Icons";
 import LanguageToggle from "./LanguageToggle";
@@ -6,7 +6,7 @@ import LanguageToggle from "./LanguageToggle";
 export default function MobileHeader() {
   const { t, scan } = useApp();
   const score = scan?.score ?? null;
-  const level = scoreLevel(score);
+  const level = assessment(scan);
 
   return (
     <header className="mobile-header" role="banner">
@@ -21,7 +21,7 @@ export default function MobileHeader() {
       </div>
 
       <div className="row" style={{ gap: 10 }}>
-        <span className={`chip level-${level}`} style={{ padding: "2px 8px", fontSize: 13 }}>
+        <span className={`chip sev-${level}`} style={{ padding: "2px 8px", fontSize: 13 }} title={t(`assessment.${level}`)}>
           {score ?? "—"}
         </span>
         <LanguageToggle />

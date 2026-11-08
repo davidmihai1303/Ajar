@@ -46,6 +46,7 @@ you can **prove** the network got safer after the fix.
 | **Proof** | Stores every scan, shows what changed and the score trend | FR-10, FR-13 |
 | **UI** | Web page showing score, most dangerous device, fixes and history | FR-11 |
 | **Grading output** | `findings.csv` + `scores.csv` for a whole folder in one command | FR-15 |
+| **Report** | One-page report (print or save as PDF) with score, devices, fixes and CIS / OWASP IoT references | FR-14 |
 | **Assistant** (optional) | Answers questions using only evidence from the scan | FR-12 |
 
 ---
@@ -200,6 +201,7 @@ cp .env.example .env      # optional: fill in LLM_BASE_URL to use the local llam
 ### 5.3 Start
 
 ```bash
+sudo install -d -m 0700 -o 1000 data    # local SQLite directory for the container user on Linux
 docker compose up -d --build            # app → http://127.0.0.1:8001
 python3 scanner/agent.py serve          # scanner agent (normal user, separate terminal)
 ```
@@ -242,6 +244,10 @@ The output filesystem must support symbolic links. Both CSV names point into the
 the previous CSVs. If the process is killed, rerun the export before sharing the folder to clear
 any interrupted work. To move standalone CSVs
 to another drive, copy their contents (for example, `cp -L findings.csv scores.csv /path/to/destination/`).
+
+### Import scan files in the browser
+
+Open **Scan**, choose one or more nmap XML files, then open a result to see its devices, score and fixes. A broken file has its own error and the other files in the batch still appear in history. Import works with the host agent and local model offline. If the API is unavailable, the startup screen offers **Try again** and **Open demo**. Choose **Return to my scans** to reconnect to your own data.
 
 ### Live scan
 
@@ -295,6 +301,11 @@ byte-for-byte reproducible.
 
 ## 8. Explanations and the optional LLM
 
+The [offline Qwen package](runtime/qwen/README.md) ships the app, its local CUDA
+server and the model weights. After installation, send a question in **Ask** to
+load Qwen. The first answer appears in the same chat. Model memory is released
+after ten idle minutes or when the local assistant is turned off.
+
 - **Built-in texts** (`backend/netcheck/explain/texts/*.yaml`): one explanation of at most two sentences
   and 1–5 fix steps per code, in Romanian and English, at roughly a 12-year-old reading level.
   Context variants exist where the code alone would mislead. For example, `rtsp` on a Mac is AirPlay, not a camera.
@@ -317,7 +328,7 @@ byte-for-byte reproducible.
 - Two scans are compared **by IP address, not by MAC**. Phones and laptops randomise their MAC, and
   in the Validation Set the same router appears with different MACs before and after.
 - The diff shows: new or removed devices, opened or closed ports, resolved and new findings, and the score trend.
-- A new device or newly opened port since the previous scan raises an alert (FR-13).
+- Automatic trends and alerts compare live scans with the same known network identity. Use the two selectors in History to compare imported before/after files. Older entries without finding details show an unassessed state.
 - **Delete my history** wipes the local database in one click (NFR-02).
 
 ---
@@ -342,6 +353,17 @@ byte-for-byte reproducible.
 ```bash
 docker compose run --rm app pytest -q              # backend
 python3 -m unittest discover -s scanner/tests      # scanner (stdlib only, never scans)
+```
+
+To test the production UI against the API, activate a Python 3.11+ virtual environment and run these commands from the repository root. The integration test starts a temporary loopback server and SQLite database, supplies a simulated scanner and runs with the model off.
+
+```bash
+python -m pip install -e 'backend[test]'
+cd frontend
+npm ci
+npx playwright install chromium --only-shell
+npm test
+NETCHECK_PYTHON="$(command -v python)" npm run test:api
 ```
 
 | Test | Checks |
@@ -421,7 +443,7 @@ Details: [`lab/README.md`](lab/README.md).
 | Hotspot lab + before/after scans | done |
 | Scanner: detection, guard, root wrapper, agent, installer | done |
 | Analysis (parser, rules, score, CSV) | done: Validation Set 24/24 rows, 8/8 scores, CSVs byte-identical to the official answers |
-| Explanations RO/EN | scaffold |
-| History + diff | scaffold |
-| API + frontend | scaffold |
-| Optional LLM (grounded personalisation + Q&A) | done, API wiring pending |
+| Explanations RO/EN | Built-in guidance and ordered fixes for all 15 codes |
+| History + diff | Persistent SQLite history, network-aware trends and manual before/after comparisons |
+| API + frontend | Connected through FastAPI and covered by a production-build browser test |
+| Optional local LLM | Grounded Q&A and per-finding personalisation with built-in fallbacks |
