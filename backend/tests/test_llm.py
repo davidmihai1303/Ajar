@@ -316,10 +316,35 @@ def test_same_request_is_cached():
 
 # --------------------------------------------------------------------------- LLM_FREE_ANSWERS (opt-in)
 
-def test_free_answers_are_off_by_default():
-    seen = []
-    answer = ask(fake_llm("Your printer is totally fine.", seen=seen), "Tell me about my network.", EVIDENCE, "en")
+@pytest.mark.parametrize("value,expected", [(None, True), ("", True), ("1", True), ("on", True),
+                                            ("0", False), ("false", False), ("OFF", False)])
+def test_free_answers_default_on_and_can_be_disabled(monkeypatch, value, expected):
+    import importlib
+    from netcheck import config
+    if value is None:
+        monkeypatch.delenv("LLM_FREE_ANSWERS", raising=False)
+    else:
+        monkeypatch.setenv("LLM_FREE_ANSWERS", value)
+    assert importlib.reload(config).LLM_FREE_ANSWERS is expected
+    monkeypatch.delenv("LLM_FREE_ANSWERS", raising=False)
+    importlib.reload(config)
+
+
+def test_record_only_mode_never_shows_model_text():
+    answer = ask(fake_llm("Your printer is totally fine."), "Tell me about my network.", EVIDENCE, "en")
     assert answer.source == "fallback" and "totally fine" not in answer.text
+
+
+def test_free_answer_facts_put_findings_first_and_stay_small(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    ports = tuple(EvidencePort(p, "tcp", "http", "Product " * 10, "1.0") for p in range(1000, 1200))
+    device = EvidenceDevice(ip="10.0.0.2", vendor="X", open_ports=ports)
+    finding = EvidenceFinding("TELNET_OPEN", "high", "10.0.0.9", 23)
+    seen = []
+    ask(fake_llm("ok", seen=seen), "Am I safe?", ScanEvidence(80, (device,), (finding,)), "en")
+    facts = json.loads(seen[0]["messages"][1]["content"])["scan_facts"]
+    assert facts[0].startswith("The network score") and "[10.0.0.9:23]" in facts[1]
+    assert sum(map(len, facts)) <= llm.MAX_FACT_CHARS
 
 
 @pytest.mark.parametrize("lang,language", [("en", "English"), ("ro", "Romanian")])
