@@ -381,3 +381,29 @@ def test_free_answer_timeout_does_not_call_the_model_twice(monkeypatch):
     seen = []
     answer = ask(fake_llm(httpx.ReadTimeout("slow"), seen=seen), "Is my printer ok?", EVIDENCE, "en")
     assert answer.source == "fallback" and "not available" in answer.text and len(seen) == 1
+
+
+# Real replies from Qwen3.5-9B on V2 (Markdown that the chat would show literally).
+@pytest.mark.parametrize("raw,expected", [
+    ("The most dangerous device is the **Hikvision camera** at `192.168.1.40`.",
+     "The most dangerous device is the Hikvision camera at 192.168.1.40."),
+    ("The biggest risks are:\n\n*   **Unencrypted settings pages:** Your router uses plain HTTP.\n*   **Reachable services:** UPnP.",
+     "The biggest risks are:\n\n• Unencrypted settings pages: Your router uses plain HTTP.\n• Reachable services: UPnP."),
+    ("1.  **Flux audio/video accesibil** (camera Hikvision la portul 554) – risc ridicat.\n2.  **Pagini** necriptate",
+     "1. Flux audio/video accesibil (camera Hikvision la portul 554) – risc ridicat.\n2. Pagini necriptate"),
+    ("## Summary\nSee [the router](http://192.168.1.1) and *update* it.\n\n\n\n---\nDone",
+     "Summary\nSee the router and update it.\n\nDone"),
+    ("Score 40/100 * 2 and 3*4 stay; a lone ** marker goes.", "Score 40/100 * 2 and 3*4 stay; a lone  marker goes."),
+    ("```\nnmap\n```", "nmap"),
+])
+def test_plain_text_removes_markdown_but_keeps_content(raw, expected):
+    assert llm.plain_text(raw) == expected
+
+
+def test_free_answer_is_shown_without_markdown(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    reply = "Your **HP printer** (`192.168.1.10`) accepts raw print jobs:\n*   Turn off port 9100."
+    answer = ask(fake_llm(reply, seen=seen), "Is my printer ok?", EVIDENCE, "en")
+    assert answer.text == "Your HP printer (192.168.1.10) accepts raw print jobs:\n• Turn off port 9100."
+    assert "no Markdown" in seen[0]["messages"][0]["content"]
