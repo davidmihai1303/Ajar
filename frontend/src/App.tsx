@@ -89,7 +89,7 @@ function Shell() {
           page = <History />;
           break;
         case "ask":
-          page = <Ask key={`${scan?.id}-${route.query ?? ""}`} />;
+          page = <Ask key={`${scan?.id}-${route.query ?? ""}-${route.draft ?? ""}`} />;
           break;
         case "report":
           page = <Report />;

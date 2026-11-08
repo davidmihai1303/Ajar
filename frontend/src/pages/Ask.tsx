@@ -157,6 +157,20 @@ export default function Ask() {
     }
   }, [route, aiConsent]);
 
+  // "Explain for my device": the prepared prompt waits in the chat box until the user sends it.
+  const draftHandled = useRef<string | null>(null);
+  useEffect(() => {
+    if (route.name !== "ask" || !route.draft || draftHandled.current === route.draft) return;
+    draftHandled.current = route.draft;
+    setQuestion(route.draft);
+    window.setTimeout(() => {
+      const box = document.getElementById("ask-question") as HTMLTextAreaElement | null;
+      if (!box || box.disabled) return;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }, 0);
+  }, [route]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void send(question);

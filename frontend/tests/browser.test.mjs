@@ -426,3 +426,21 @@ test("Ask is a conversation: follow-ups carry earlier turns, and New conversatio
   await page.getByText("Answer 6").waitFor();
   assert.deepEqual(bodies[5].history, []);
 });
+
+test("Explain for my device writes a prompt with the problem and the device into the chat without sending it", async (t) => {
+  const asked = [];
+  const page = await open(t, "devices/192.168.1.1", { scan: risky, onApi: (path) => {
+    if (path === "/api/ask") asked.push(path);
+    return explainReply(path);
+  } });
+  await page.getByText("Title HTTP_ADMIN_CLEARTEXT").waitFor();
+  await page.getByRole("link", { name: "Explain for my device" }).click();
+  const box = page.locator("#ask-question");
+  await box.waitFor();
+  const prompt = await box.inputValue();
+  assert.match(prompt, /"Title HTTP_ADMIN_CLEARTEXT" \(medium severity, code HTTP_ADMIN_CLEARTEXT\)/);
+  assert.match(prompt, /Device: Router by TP-Link, IP 192\.168\.1\.1, port tcp\/80\./);
+  assert.doesNotMatch(prompt, /img|onerror/);
+  assert.equal(await page.locator(".bubble-user").count(), 0);
+  assert.deepEqual(asked, []);
+});

@@ -8,7 +8,7 @@ export type Route =
   | { name: "device"; ip: string }
   | { name: "scan" }
   | { name: "history" }
-  | { name: "ask"; query?: string }
+  | { name: "ask"; query?: string; draft?: string }
   | { name: "report" }
   | { name: "widget" }
   | { name: "inbox" };
@@ -27,7 +27,7 @@ export function parseRoute(hash: string): Route {
     case "history":
       return { name: "history" };
     case "ask":
-      return { name: "ask", query: search.get("q") ?? undefined };
+      return { name: "ask", query: search.get("q") ?? undefined, draft: search.get("draft") ?? undefined };
     case "report":
       return { name: "report" };
     case "widget":
@@ -42,9 +42,9 @@ export function parseRoute(hash: string): Route {
 export const href = (route: Route): string => {
   if (route.name === "device") return `#/devices/${encodeURIComponent(route.ip)}`;
   if (route.name === "home") return "#/";
-  if (route.name === "ask" && "query" in route && route.query) {
-    return `#/ask?q=${encodeURIComponent(route.query)}`;
-  }
+  if (route.name === "ask" && route.query) return `#/ask?q=${encodeURIComponent(route.query)}`;
+  // A draft is only written into the chat box; the user reads it and sends it.
+  if (route.name === "ask" && route.draft) return `#/ask?draft=${encodeURIComponent(route.draft)}`;
   return `#/${route.name}`;
 };
 
