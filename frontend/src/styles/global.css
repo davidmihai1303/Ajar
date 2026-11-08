@@ -474,3 +474,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--line); }
   .report .mono { font-size: 8.5pt; }
   .report a { color: inherit; text-decoration: none; }
 }
+
+/* Long scan names must not push a dropdown past the edge of a phone screen */
+.field { min-width: 0; max-width: 100%; }
+.field select { width: 100%; max-width: 100%; }

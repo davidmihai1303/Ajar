@@ -2,6 +2,7 @@
 // just to its left. Ajar is still the one global AjarDock: this page only tells it where to stand
 // (an "anchor"), so it walks from here to the dialogs, the scan and the corner without disappearing.
 import { useLayoutEffect, useRef } from "react";
+import { useIsMobile } from "../lib/useIsMobile";
 import { href } from "../router";
 import { useApp } from "../state/AppState";
 import { IconWifi } from "../components/Icons";
@@ -12,6 +13,7 @@ const AJAR_H = 240; // mascot + score lines
 const GAP = 40;
 
 export default function Welcome() {
+  const isMobile = useIsMobile();
   const { t, demo, network, agentDown, scanProblem, lang, startScanFlow, setAnchor } = useApp();
   const column = useRef<HTMLDivElement>(null);
 
@@ -59,7 +61,7 @@ export default function Welcome() {
           </div>
           <div className="row center">
             <a href={href({ name: "scan" })}>{t("welcome.import")}</a>
-            <a href={href({ name: "ask" })}>{t("welcome.what")}</a>
+            {!isMobile && <a href={href({ name: "ask" })}>{t("welcome.what")}</a>}
           </div>
         </div>
       </div>

@@ -548,3 +548,22 @@ test("a scan shows changing door-themed words and ends with a normal system noti
   assert.equal(shown.icon, "/ajar-192.png");
   assert.equal(await page.locator(".ajar-toast").count(), 0);
 });
+
+test("on a phone every dashboard link opens its own page and the Show me button is gone", async (t) => {
+  const page = await open(t, "dashboard", { scan: risky, onApi: explainReply });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await page.locator(".mobile-header").waitFor();
+  await page.getByText("Title TELNET_OPEN").first().waitFor();
+  assert.equal(await page.getByRole("link", { name: "Show me how" }).count(), 0);
+  await page.getByRole("link", { name: /View device/ }).first().click();
+  await page.waitForURL(/#\/devices\/192\.168\.1\.\d+/);
+  await page.locator("main h1").waitFor();
+  await page.getByRole("link", { name: "Ajar" }).first().click();
+  await page.getByRole("link", { name: "Network safety report", exact: false }).or(page.getByRole("link", { name: /report/i })).first().click();
+  await page.getByRole("heading", { name: "Network safety report" }).waitFor();
+  await page.evaluate(() => { location.hash = "#/history"; });
+  await page.getByRole("heading", { name: "History" }).waitFor();
+  await page.evaluate(() => { location.hash = "#/ask"; });
+  await page.waitForURL("**/#/dashboard");
+});

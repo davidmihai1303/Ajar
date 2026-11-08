@@ -66,8 +66,8 @@ function Shell() {
     content = <Welcome />;
   } else {
     let page: JSX.Element;
-    if (isMobile) {
-      page = route.name === "inbox" ? <Inbox /> : <Dashboard />;
+    if (isMobile && route.name === "ask") {
+      page = <Dashboard />; // chat is desktop-only; the effect above leaves this route
     } else if (!scan && route.name !== "scan" && route.name !== "history" && route.name !== "ask" && route.name !== "inbox") {
       page = (
         <div className="page">

@@ -178,9 +178,11 @@ export default function Dashboard() {
                 <IconRefresh />
                 {t("dashboard.rescan")}
               </button>
-              <a className="button primary" href={href({ name: "device", ip: first.device.ip })}>
-                {t("dashboard.showMe")}
-              </a>
+              {!isMobile && (
+                <a className="button primary" href={href({ name: "device", ip: first.device.ip })}>
+                  {t("dashboard.showMe")}
+                </a>
+              )}
             </div>
           </div>
         </section>
