@@ -550,13 +550,13 @@ def test_profession_never_makes_a_claim_about_a_device_acceptable(monkeypatch):
         assert answer.source == "scan" and reply not in answer.text
 
 
-def test_profile_prompt_keeps_every_sentence_about_the_scan(monkeypatch):
+def test_profile_prompt_adapts_level_and_examples(monkeypatch):
     monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
     seen = []
     ask(fake_llm("ok", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), {"tech": "advanced"})
     system = seen[0]["messages"][0]["content"]
-    assert "every sentence must still be" in system and "under 18 or 65 or older" in system
-    assert "brief and technical" not in system
+    assert "under 18 or 65 or older" in system and "brief and technical" in system
+    assert "examples from their profession" in system
 
 
 def test_record_only_mode_ignores_the_profile():
