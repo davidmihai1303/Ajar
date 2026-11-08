@@ -110,6 +110,12 @@ export interface AskResponse {
   answer: string | null;
 }
 
+export interface ModelStatus {
+  available: boolean;
+  state?: "idle" | "starting" | "ready" | "failed";
+  reason?: "gpu" | "memory" | "weights" | "port" | "load" | "timeout" | "server";
+}
+
 /** Body of a 4xx response when the scope guard refuses a scan. */
 export interface ScanRefusal {
   reason_ro: string;

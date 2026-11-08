@@ -1,6 +1,8 @@
 # secrets / local config
 .env
 .api_key
+/models/
+/release/
 *.key
 *.pem
 *.env.local
