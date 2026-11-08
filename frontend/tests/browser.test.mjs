@@ -539,7 +539,7 @@ test("About you: the profile is saved in this browser and sent with Ask question
   await dialog.getByLabel("How familiar are you with technology?").selectOption("beginner");
   await dialog.getByLabel("Profession (optional)").fill("  retired   teacher ");
   await dialog.getByRole("button", { name: "Save" }).click();
-  await page.getByText("Answers adapted for: beginner · 65 or older · retired teacher").waitFor();
+  await page.getByText("What Ajar knows about you: beginner · 65 or older · retired teacher").waitFor();
   const input = page.getByRole("textbox");
   await input.fill("Is my router safe?");
   await input.press("Enter");
@@ -547,7 +547,7 @@ test("About you: the profile is saved in this browser and sent with Ask question
   assert.deepEqual(bodies[0].profile, { age: "65_plus", tech: "beginner", profession: "retired teacher" });
   // Kept after a reload, in this browser only.
   await page.reload();
-  await page.getByText("Answers adapted for: beginner · 65 or older · retired teacher").waitFor();
+  await page.getByText("What Ajar knows about you: beginner · 65 or older · retired teacher").waitFor();
   // Removing it stops sending it.
   await page.getByRole("button", { name: "Change" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Remove my details" }).click();
@@ -557,6 +557,7 @@ test("About you: the profile is saved in this browser and sent with Ask question
   await input.press("Enter");
   await page.getByText("Answer 2").waitFor();
   assert.equal("profile" in bodies[1], false);
+});
 
 test("a scan shows changing door-themed words and ends with a normal system notification", async (t) => {
   let finish;
@@ -643,4 +644,22 @@ test("on a phone the scan page does not jump when the phrase changes", async (t)
     return document.querySelector(".progress-track").getBoundingClientRect().top;
   }));
   assert.equal(new Set(tops).size, 1, tops.join());
+});
+
+test("About you: details can be removed with the assistant off and go away with the history", async (t) => {
+  const page = await open(t, "ask", { onApi(path, request) {
+    if (path === "/api/history" && request.method() === "DELETE") return { status: 204 };
+  } });
+  await page.evaluate(() => {
+    localStorage.setItem("ajar.ai", "no");
+    localStorage.setItem("ajar.profile", JSON.stringify({ age: "30_49", tech: "advanced", profession: "nurse" }));
+  });
+  await page.reload();
+  await page.getByText("What Ajar knows about you: advanced").waitFor();
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await page.goto(`${new URL(page.url()).origin}/#/history`);
+  await page.getByRole("button", { name: /delete my history/i }).click();
+  await page.getByRole("dialog").or(page.getByRole("alertdialog")).getByRole("button", { name: "Delete history" }).click();
+  await page.waitForFunction(() => localStorage.getItem("ajar.profile") === null);
 });

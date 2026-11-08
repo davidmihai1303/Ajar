@@ -19,7 +19,7 @@ export function normalizeProfile(raw: unknown): UserProfile {
   return {
     age: AGES.includes(value.age as AgeRange) ? (value.age as AgeRange) : null,
     tech: TECH.includes(value.tech as TechLevel) ? (value.tech as TechLevel) : null,
-    profession: typeof value.profession === "string" ? value.profession.replace(/\s+/g, " ").trim().slice(0, PROFESSION_MAX) : "",
+    profession: typeof value.profession === "string" ? Array.from(value.profession.replace(/\s+/g, " ").trim()).slice(0, PROFESSION_MAX).join("") : "",
   };
 }
 

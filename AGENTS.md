@@ -118,7 +118,8 @@ gitleaks detect --source . --no-banner           # must be clean
   familiarity and profession (max 60 characters), kept in the browser (`localStorage`, `ajar.profile`)
   and sent as `AskRequest.profile` (`UserProfile`). Only free answers use it, as data in the request
   (`"user"`), never as instructions; the profession is cleaned. The model must not mention the age or
-  guess anything else about the user. Record-only mode ignores it.
+  guess anything else about the user, and every sentence must still be about the scan. The profession never
+  counts as evidence in the grounding check. "Delete my history" also removes the profile. Record-only mode ignores it.
 - Everything sent to the model (scan facts, question, prompt, history, profile) must fit the bundled model's
   4,096-token context together with the answer (`max_tokens` 600). Re-check the budgets when adding input.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.

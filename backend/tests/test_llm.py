@@ -542,13 +542,21 @@ def test_profile_values_are_restricted_and_cleaned(monkeypatch):
     assert mac not in json.dumps(seen[0]) and "role" not in json.dumps(sent)
 
 
-def test_maker_from_the_users_profession_is_not_invented_evidence(monkeypatch):
+def test_profession_never_makes_a_claim_about_a_device_acceptable(monkeypatch):
     monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
-    reply = "As a Cisco engineer you know the drill: close port 9100 on 192.168.1.10."
-    answer = ask(fake_llm(reply), "Is my printer ok?", EVIDENCE, "en", (), {"profession": "Cisco network engineer"})
-    assert answer.source == "llm_free" and answer.text == reply
-    without = ask(fake_llm(reply), "Is my printer ok?", EVIDENCE, "en", (), {"profession": "teacher"})
-    assert without.source != "llm_free"
+    for profession, reply in (("Cisco network engineer", "Your Cisco router is exposed."),
+                              ("OpenSSH 6.2 admin", "You run OpenSSH 6.2 here.")):
+        answer = ask(fake_llm(reply), "What problems do I have?", EVIDENCE, "en", (), {"profession": profession})
+        assert answer.source == "scan" and reply not in answer.text
+
+
+def test_profile_prompt_keeps_every_sentence_about_the_scan(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    ask(fake_llm("ok", seen=seen), "Is my printer ok?", EVIDENCE, "en", (), {"tech": "advanced"})
+    system = seen[0]["messages"][0]["content"]
+    assert "every sentence must still be" in system and "under 18 or 65 or older" in system
+    assert "brief and technical" not in system
 
 
 def test_record_only_mode_ignores_the_profile():

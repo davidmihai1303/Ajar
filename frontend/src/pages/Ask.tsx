@@ -196,7 +196,7 @@ export default function Ask() {
           )}
         </div>
       )}
-      {hasEvidence && aiConsent !== false && (
+      {((hasEvidence && aiConsent !== false) || !isEmptyProfile(profile)) && (
         <p className="profile-line">
           {isEmptyProfile(profile) ? (
             <button type="button" className="link-button" onClick={() => setEditingProfile(true)}>
