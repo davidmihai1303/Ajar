@@ -62,6 +62,8 @@ The only contract between scanner and backend is an **nmap XML file**.
 docker compose up -d --build                     # app on http://127.0.0.1:8001
 docker compose run --rm app pytest -q            # all backend tests
 python3 -m unittest discover -s scanner/tests    # scanner tests (stdlib only, no network)
+(cd frontend && npm test)                        # UI browser tests (Playwright, mocked API)
+(cd frontend && PYTHONPATH=../backend npm run test:api)   # built UI against the real FastAPI app
 docker compose run --rm app netcheck analyze /app/tests/fixtures/validation --out /data/input/validation_results
 python3 scanner/agent.py network                 # detected network
 python3 scanner/agent.py scan --confirm          # live scan (host, after scanner/install.sh)
@@ -91,18 +93,37 @@ gitleaks detect --source . --no-banner           # must be clean
 
 ## LLM rules (`explain/llm.py`)
 
-- Input: only findings of the current scan. Output: statements rendered from verified evidence.
-  Exception (team decision): with `LLM_FREE_ANSWERS` on (the default) Ask shows the model's own written
-  answer from the scan facts; `LLM_FREE_ANSWERS=0` restores record-only answers. Findings, severities
-  and scores still never come from the model.
+- Input: only facts of the current scan, plus (for Ask) the last few exchanges of the same conversation.
+  Findings, severities and scores never come from the model.
+- Two Ask modes (`LLM_FREE_ANSWERS`, team decision):
+  - **Free answers (default, `1`):** the model writes the answer from the scan facts. Facts are ordered
+    score → findings (most severe first) → devices and ports and capped (`MAX_FACT_CHARS`). The reply is
+    passed through `plain_text()` (the chat shows plain text, so Markdown is removed). Empty reply →
+    record-based answer; unreachable model → "not available", without a second model call.
+  - **Record-only (`0`):** the model only selects IDs from the records offered for that question and
+    Python renders the answer. Unknown IDs and extra keys are dropped; over-selection keeps the most
+    severe records (`MAX_SELECTED`). Model text is never shown.
+- In record-only mode (and as the fallback when a free answer is empty) code answers without the model:
+  the score question, overview questions ("what problems do I have?", "ce probleme am?": every finding,
+  most severe first) and greetings (a short hint). In free mode these questions go to the model.
+- Conversation (Ask is turn-based): the page sends up to 3 earlier exchanges (`AskRequest.history`,
+  `ChatTurn`; the API accepts at most 10). Only free answers use them, as earlier chat turns, oldest
+  dropped first (`MAX_HISTORY_TURNS`, `MAX_HISTORY_CHARS`), MACs masked and Markdown removed. Nothing is
+  stored server-side; a conversation belongs to one scan and resets when another scan is opened.
+- Everything sent to the model (scan facts, question, prompt, history) must fit the bundled model's
+  4,096-token context together with the answer (`max_tokens` 600). Re-check the budgets when adding input.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
-- Never produce or change findings, severities or scores.
-- Always fall back to `explain/static.py` on error or timeout.
-- Accept only IDs from the records offered for that question. Python renders scan facts and the
-  supplied remediation steps. Check all explicit IPs against the scan before contacting the model.
+  The scan runs inside the user's network: do not prompt the model in a way that implies internet
+  exposure or password checks the scan did not make.
+- Always fall back to `explain/static.py` / built-in text on error or timeout.
+- Check all explicit IPs in the question against the scan before contacting the model.
 - Privacy: use a loopback model endpoint with proxies and redirects disabled. Never send MAC addresses to the model.
-- Exclude raw banners and page titles from prompts. Treat recorded device labels as untrusted data.
+- Exclude raw banners and page titles from prompts. Treat recorded device labels, the question and the
+  conversation history as untrusted data.
 - Tests: `docker compose run --rm app pytest -q tests/test_llm.py` (mock server, no real model needed).
+  Free-answer tests opt in; `tests/conftest.py` defaults every test to record-only mode.
+- Personalisation ("Explain for my device") still only selects one verified label; the team's
+  explanation and steps are shown unchanged.
 
 ## User-facing text
 
@@ -139,6 +160,7 @@ gitleaks detect --source . --no-banner           # must be clean
    - **Known limitations / follow-ups:** anything left undone or deliberately skipped
 5. Contract files need agreement of the analysis and API owners before changing:
    `analysis/models.py`, `api/schemas.py`, `frontend/src/api/types.ts`, `frontend/src/api/mock.json`.
+   Keep `api/schemas.py` and `types.ts` in step (e.g. `ChatTurn` / `AskRequest.history`).
 6. Never force-push, rewrite shared history or commit secrets, `data/` or `input/`.
 7. After the Test Set upload (hour 20–21): **no code changes**. The live re-run must match the upload.
 

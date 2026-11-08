@@ -1,7 +1,7 @@
 // Optional local Q&A grounded only in the current scan.
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
-import type { ModelStatus } from "../api/types";
+import type { ChatTurn, ModelStatus } from "../api/types";
 import { formatDate } from "../i18n";
 import { useRoute } from "../router";
 import { useApp } from "../state/AppState";
@@ -17,6 +17,8 @@ interface Message {
 }
 
 const SUGGESTIONS = ["ask.s1", "ask.s2", "ask.s3"];
+/** Earlier exchanges sent with each question, so follow-ups ("how do I close them?") make sense. */
+const HISTORY_TURNS = 3;
 
 export default function Ask() {
   const { t, lang, scan, aiConsent, setAiConsent } = useApp();
@@ -32,6 +34,14 @@ export default function Ask() {
   const [unloadFailed, setUnloadFailed] = useState(false);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
+  const scanId = scan?.id;
+  useEffect(() => {
+    // A conversation belongs to one scan: start over when another scan is opened.
+    active.current?.abort();
+    active.current = null;
+    setSending(null);
+    setMessages([]);
+  }, [scanId]);
   useEffect(() => {
     if (aiConsent !== true && active.current) {
       active.current.abort();
@@ -87,6 +97,11 @@ export default function Ask() {
     const controller = new AbortController();
     active.current = controller;
     const index = retryIndex ?? messages.length;
+    const history: ChatTurn[] = messages
+      .slice(0, index)
+      .filter((m) => m.answer && !m.retry)
+      .slice(-HISTORY_TURNS)
+      .map((m) => ({ question: m.question, answer: m.answer ?? "" }));
     if (retryIndex === undefined) {
       setQuestion("");
       setMessages(list => [...list, { question: trimmed }]);
@@ -100,7 +115,7 @@ export default function Ask() {
       }
     };
     try {
-      const answer = await api.ask(scan.id, trimmed, lang, controller.signal);
+      const answer = await api.ask(scan.id, trimmed, lang, controller.signal, history);
       if (controller.signal.aborted) return;
       let message = answer.answer ?? t(answer.available ? "ask.cannotAnswer" : "ask.off");
       if (!answer.available) {
@@ -173,7 +188,14 @@ export default function Ask() {
       {aiConsent === true && status && !status.available && !status.state && <p className="muted">{t("ask.modelOffline")}</p>}
       {aiConsent === false && unloadFailed && <p role="status">{t("ask.unloadFailed")} <button type="button" onClick={() => void unload()}>{t("common.retry")}</button></p>}
       {aiConsent === true && (
-        <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
+        <div className="row">
+          <button type="button" className="button self-start" onClick={turnOff}>{t("ask.turnOff")}</button>
+          {messages.length > 0 && (
+            <button type="button" className="button self-start" disabled={busy} onClick={() => setMessages([])}>
+              {t("ask.newChat")}
+            </button>
+          )}
+        </div>
       )}
       {aiConsent === false && (
         <ErrorBanner
