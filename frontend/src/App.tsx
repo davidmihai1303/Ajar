@@ -9,6 +9,7 @@ import { useIsMobile } from "./lib/useIsMobile";
 import { useMobilePoller } from "./lib/useMobilePoller";
 import { navigate, useRoute } from "./router";
 import { AppProvider, useApp } from "./state/AppState";
+import { ConversationProvider } from "./state/Conversation";
 import { InboxProvider } from "./state/Inbox";
 import AjarDock from "./components/AjarDock";
 import AjarWidget from "./components/AjarWidget";
@@ -140,9 +141,11 @@ function Shell() {
 export default function App() {
   return (
     <AppProvider>
-      <InboxProvider>
-        <Shell />
-      </InboxProvider>
+      <ConversationProvider>
+        <InboxProvider>
+          <Shell />
+        </InboxProvider>
+      </ConversationProvider>
     </AppProvider>
   );
 }
