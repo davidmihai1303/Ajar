@@ -9,7 +9,8 @@ nmap 7.98, joined only to the hotspot. Four team-owned targets (setups A + B + C
 (nginx serving "Router Admin Login", fake Telnet / vsftpd 2.3.4 banners from `lab/fake_services.py`
 with no real shell behind them, and macOS sharing services), a Windows laptop (RDP, SMB, MySQL) and a
 Raspberry Pi (SSH, VNC). Before/after in `lab/scans/` (MACs masked): 9 finding types, score **0** →
-**5** after switching off the Mac's services. Details: `lab/README.md`.
+**75** after switching off the Mac's services and the Pi's VNC and taking the Windows laptop off the
+hotspot. Details: `lab/README.md`.
 
 ## Architecture
 

@@ -6,4 +6,4 @@
 4. Guardrail: public IP + venue network refused
 5. Broken file: clear error, no crash
 6. History: before/after from our lab, score improving
-7. No secrets: gitleaks
+7. No secrets: `scripts/gitleaks.sh` (or `./demo.sh check`)

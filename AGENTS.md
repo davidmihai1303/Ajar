@@ -67,7 +67,8 @@ python3 -m unittest discover -s scanner/tests    # scanner tests (stdlib only, n
 docker compose run --rm app netcheck analyze /app/tests/fixtures/validation --out /data/input/validation_results
 python3 scanner/agent.py network                 # detected network
 python3 scanner/agent.py scan --confirm          # live scan (host, after scanner/install.sh)
-gitleaks detect --source . --no-banner           # must be clean
+scripts/gitleaks.sh                              # gitleaks over the whole history, pinned + checksum-verified; must be clean
+./demo.sh                                        # demo laptop: app + local Qwen + agent, one command (stop/status/check)
 ```
 
 ## Definition of done for any change in `analysis/`
@@ -78,7 +79,8 @@ gitleaks detect --source . --no-banner           # must be clean
 
 ## Security rules
 
-- No secrets in code, tests, fixtures or docs. Configuration only via environment variables (`backend/netcheck/config.py`, `.env.example` lists names only). Never commit `.env` or `.api_key`.
+- No secrets in code, tests, fixtures or docs. `scripts/gitleaks.sh` must be clean; add to `.gitleaksignore` only a
+  proven false positive (e.g. a placeholder), with its reason. Configuration only via environment variables (`backend/netcheck/config.py`, `.env.example` lists names only). Never commit `.env` or `.api_key`.
 - Parse XML only with `defusedxml`, with the size limit from config.
 - Treat banners, titles and hostnames as untrusted text: escape in the UI, never `dangerouslySetInnerHTML`, never `shell=True`.
 - Mask MAC addresses in **every** output (API, CSV, UI, logs) via `analysis/privacy.py`.

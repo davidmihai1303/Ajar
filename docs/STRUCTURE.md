@@ -7,6 +7,8 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | File | Purpose |
 |---|---|
 | `docker-compose.yml` | App container: host network, non-root, volumes for scans (read-only), history and input |
+| `demo.sh` | Demo laptop in one command: reuses or downloads the pinned Qwen weights, builds/pulls images, starts app + Qwen + scanner agent, opens Ajar; `stop`, `status`, `check` |
+| `scripts/gitleaks.sh`, `.gitleaksignore` | Secret scan (NFR-01, live check 7): gitleaks 8.30.1 downloaded once into `.tools/` and SHA-256 checked; known false positives with their reason |
 | `.env.example` | Names of the configuration variables, no values |
 | `.gitignore` | Keeps `.env`, `.api_key`, `data/`, `input/`, build output out of git |
 | `SmartHack_Setup.md` | Existing distributed llama-server setup (optional LLM backend) |
@@ -53,12 +55,12 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | File | Purpose |
 |---|---|
 | `fixtures/validation/` | The 8 official XML files + expected CSVs |
-| `fixtures/lab/` | Our lab scans (`scan_01.xml`, `scan_02.xml`, `scan_03_after.xml`) |
+| `fixtures/lab/` | Our lab before/after pair (`lab_before.xml`, `lab_after.xml`, copies from `lab/scans/`) |
 | `test_validation.py` | 24 rows, 8 scores, no extra rows |
 | `test_rules.py` | Rule traps |
 | `test_parser.py` | Hostile and broken input |
 | `test_history.py` | V6a → V6b diff |
-| `test_lab.py` | 0 → 75 |
+| `test_lab.py` | Brief's minimum lab on our pair (0 → 75), MACs masked |
 | `test_determinism.py` | Same output on every run |
 
 ## `frontend/src/`: React + TypeScript

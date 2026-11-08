@@ -25,14 +25,17 @@ deci finding-urile și scorurile nu se schimbă.
 
 | Fișier | Ce arată | Scor |
 |---|---|---|
-| `scan_20261108_104602_before.xml` | 4 ținte, 9 tipuri de finding | **0** |
-| `scan_20261108_105232_after.xml` | Mac: Screen Sharing, File Sharing, Remote Login, `fake_services.py` oprite | **5** |
+| `scan_20261108_104602_before.xml` | **before:** 4 ținte, 9 tipuri de finding | **0** |
+| `scan_20261108_105232.xml` | Mac: Screen Sharing, File Sharing, Remote Login, `fake_services.py` oprite | 5 |
+| `scan_20261108_111252.xml` | laptopul Windows (RDP, SMB, MySQL) scos din hotspot | 55 |
+| `scan_20261108_112146_after.xml` | **after:** și VNC oprit pe Pi | **75** |
 | `scan_20261107_214638_before.xml` / `scan_20261107_215525_after.xml` | prima pereche (doar iPhone + Mac) | 0 → 75 |
 
-Perechea curentă e copiată în `backend/tests/fixtures/lab/` și verificată de `tests/test_lab.py`.
+Perechea before/after (`104602_before` → `112146_after`) e copiată în `backend/tests/fixtures/lab/`
+și verificată de `tests/test_lab.py`. Rămân în „after": FTP pe iPhone, pagina „Router Admin Login" pe
+Mac (HTTP), Mac-ul fără nume (dispozitiv necunoscut) și SSH (doar informativ).
 
-**De refăcut pentru demo:** în „after" sunt reparate doar serviciile Mac-ului. Oprind și RDP + MySQL pe
-Windows și VNC pe Pi, scorul „after" ar fi 75 (85 cu FTP-ul de pe iPhone oprit).
+În pitch: laptopul Windows a fost **scos din rețea**, nu reparat; istoricul îl arată ca dispozitiv dispărut.
 
 ## Observații (pentru limitări)
 - AirPlay (5000, 7000) e raportat ca `rtsp` → CAMERA_STREAM_EXPOSED conform regulii
