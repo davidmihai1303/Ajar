@@ -334,13 +334,18 @@ after ten idle minutes or when the local assistant is turned off.
 - **Built-in texts** (`backend/netcheck/explain/texts/*.yaml`): one explanation of at most two sentences
   and 1–5 fix steps per code, in Romanian and English, at roughly a 12-year-old reading level.
   Context variants exist where the code alone would mislead. For example, `rtsp` on a Mac is AirPlay, not a camera.
-- The optional llama-server on the MSI selects relevant scan records. Python renders each selected
-  device, endpoint, finding and score in the requested language. Device-specific explanations use a
-  verified label with the original explanation and ordered fixes.
-- An IP outside the current scan gets a local reply before the model is called. For in-scope
-  questions, the model can select only IDs offered for that question. Unrecognised IDs, malformed
-  replies and free-form claims fall back to built-in text. A question can still be ambiguous, so
-  each returned statement identifies its device or endpoint. Simple score questions read the scan score directly.
+- The optional llama-server on the MSI is used only by **Ask**. Findings, severities, scores and the
+  finding cards' explanations and fixes never come from the model. "Explain for my device" only fills in
+  an Ask question from catalog facts, and the user sends it.
+- **Free answers (default, `LLM_FREE_ANSWERS=1`):** the model writes the answer from the current scan's
+  facts (score, findings most severe first, devices and ports). `explain/grounding.py` replaces any
+  reply that names an IP, port, version, device maker, CVE or phone number the scan does not show with
+  the verified answer (NFR-06). It checks these identifiers, not the meaning of every sentence.
+- **Record-only (`LLM_FREE_ANSWERS=0`, strict):** the model can only select record IDs offered for that
+  question, and Python renders each selected device, endpoint, finding and score in the requested
+  language. Unrecognised IDs and malformed replies fall back to built-in text.
+- An IP outside the current scan gets a local reply before the model is called. A timeout or a missing
+  model gives the built-in answer.
 - Model requests go directly to a numeric loopback address. The client normalises `localhost`
   to `127.0.0.1` and disables environment proxies and redirects.
 - **About you:** on the Ask page, "Tell Ajar about you" stores an optional age range, tech familiarity
@@ -483,4 +488,4 @@ Details: [`lab/README.md`](lab/README.md).
 | Explanations RO/EN | Built-in guidance and ordered fixes for all 15 codes |
 | History + diff | Persistent SQLite history, network-aware trends and manual before/after comparisons |
 | API + frontend | Connected through FastAPI and covered by a production-build browser test |
-| Optional local LLM | Grounded Q&A and per-finding personalisation with built-in fallbacks |
+| Optional local LLM | Ask: free answers checked against the scan (or record-only), built-in fallbacks |
