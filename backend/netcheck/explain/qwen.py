@@ -44,16 +44,20 @@ class ManagedQwen(LLMClient):
             return fallback
         return reason if reason in {"weights", "gpu", "memory", "port"} else fallback
 
+    def _worker_status(self, client: httpx.Client, timeout: float) -> dict | None:
+        response = client.get("/models", timeout=timeout)
+        response.raise_for_status()
+        for model in response.json()["data"]:
+            if model["id"] == self.model:
+                return model["status"]
+        return None
+
     def _router_state(self) -> tuple[str, str | None]:
         try:
             with self._client(2) as client:
-                response = client.get("/models")
-                response.raise_for_status()
-                models = response.json()["data"]
-                model = next((m for m in models if m["id"] == self.model), None)
-                if not model:
+                status = self._worker_status(client, 2)
+                if status is None:
                     return "failed", "weights"
-                status = model["status"]
                 if status.get("failed"):
                     return "failed", self._reason("load")
                 states = {"loaded": "ready", "sleeping": "idle", "unloaded": "idle", "loading": "starting"}
@@ -140,22 +144,34 @@ class ManagedQwen(LLMClient):
                 self._unload_worker()
             self.lifecycle.release()
 
+    def _wait_for_unload(self, client: httpx.Client) -> bool:
+        # The acknowledgement can arrive before the worker exits. Only the router's
+        # explicit unloaded state confirms shutdown after that acknowledgement.
+        deadline = time.monotonic() + 12
+        while (remaining := deadline - time.monotonic()) > 0:
+            try:
+                status = self._worker_status(client, min(2.0, remaining))
+                if status is not None and status["value"] == "unloaded":
+                    return True
+            except (httpx.HTTPError, KeyError, TypeError, ValueError):
+                pass
+            time.sleep(min(0.1, remaining))
+        return False
+
     def _unload_worker(self) -> bool:
         try:
             with self._client(12) as client:
                 response = client.post("http://127.0.0.1:8080/models/unload", json={"model": self.model})
-                if not response.is_success:
-                    if response.status_code != 400 or "not running" not in response.json()["error"]["message"]:
-                        return False
-            # The router acknowledges unload before its worker has exited.
-            deadline = time.monotonic() + 12
-            while time.monotonic() < deadline:
-                state, _ = self._router_state()
-                if state in {"idle", "failed"}:
-                    return True
-                time.sleep(0.1)
+                if response.is_success:
+                    return self._wait_for_unload(client)
+                return response.status_code == 400 and response.json()["error"]["message"] == "model is not running"
         except httpx.ConnectError:
-            return True  # No managed worker is listening.
+            try:
+                self.socket.lstat()
+            except FileNotFoundError:
+                return True  # The managed socket is absent, e.g. on a CPU-only install.
+            except OSError:
+                pass
         except (httpx.HTTPError, KeyError, ValueError, TypeError):
             pass
         return False

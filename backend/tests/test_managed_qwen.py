@@ -1,6 +1,7 @@
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import httpx
 from fastapi.testclient import TestClient
@@ -101,14 +102,46 @@ def test_cold_timeout_and_retry(tmp_path):
 
 
 def test_turn_off_waits_for_router_to_release_worker(tmp_path):
-    states = iter(["loaded", "unloaded"])
+    states = iter(["loaded", "timeout", "sleeping", "unloaded"])
     def acknowledge(req):
         if req.url.path == "/models/unload":
             return httpx.Response(200, json={"success": True})
-        return httpx.Response(200, json={"data": [{"id": "local", "status": {"value": next(states)}}]})
+        state = next(states)
+        if state == "timeout":
+            raise httpx.ReadTimeout("router busy")
+        return httpx.Response(200, json={"data": [{"id": "local", "status": {"value": state}}]})
     model = ManagedQwen(str(tmp_path), 60, transport=httpx.MockTransport(acknowledge))
     assert model.unload()
     assert list(states) == []
+
+
+def test_turn_off_reports_failure_if_shutdown_cannot_be_confirmed(tmp_path, monkeypatch):
+    elapsed = 0.0
+    def advance(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+    monkeypatch.setattr("netcheck.explain.qwen.time", SimpleNamespace(monotonic=lambda: elapsed, sleep=advance))
+
+    def router(req):
+        if req.url.path == "/models/unload":
+            return httpx.Response(200)
+        raise httpx.ReadTimeout("worker status unknown")
+
+    model = ManagedQwen(str(tmp_path), 60, transport=httpx.MockTransport(router))
+    with TestClient(create_app(db=str(tmp_path / "db"), model=model), base_url="http://localhost") as api:
+        response = api.post("/api/llm/unload")
+        assert response.status_code == 503 and response.json()["detail"] == "unload_failed"
+    assert elapsed >= 12
+
+
+def test_turn_off_distinguishes_absent_socket_from_connection_failure(tmp_path):
+    def unreachable(req):
+        raise httpx.ConnectError("cannot reach router")
+
+    model = ManagedQwen(str(tmp_path), 60, transport=httpx.MockTransport(unreachable))
+    assert model.unload()
+    (tmp_path / "router.sock").touch()
+    assert not model.unload()
 
 
 def test_unreachable_private_socket_never_posts_to_tcp(tmp_path, monkeypatch):
