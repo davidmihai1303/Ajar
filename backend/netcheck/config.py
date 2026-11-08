@@ -14,4 +14,6 @@ LLM_TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "60"))
 # The Ask assistant shows the model's own written answer, built from the scan facts. On by default;
 # set LLM_FREE_ANSWERS=0 to show only verified scan records (free text is not checked, brief NFR-06).
 LLM_FREE_ANSWERS: bool = os.environ.get("LLM_FREE_ANSWERS", "1").strip().lower() not in ("0", "false", "no", "off")
+# Built Ajar desktop app files (AppImage / .deb) offered for download; read-only, optional.
+DOWNLOADS_DIR: str = os.environ.get("NETCHECK_DOWNLOADS_DIR", "/data/downloads")
 QWEN_RUNTIME_DIR: str = os.environ.get("AJAR_QWEN_RUNTIME", "")

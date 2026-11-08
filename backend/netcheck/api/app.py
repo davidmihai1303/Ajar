@@ -13,12 +13,13 @@ from starlette.staticfiles import StaticFiles
 from netcheck import config
 from netcheck.explain.llm import LLMClient
 from .agent_client import AgentClient
-from . import routes_explain, routes_history, routes_scans
+from . import routes_downloads, routes_explain, routes_history, routes_scans
 
 
 def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
                static_dir: Path | None = None, agent: AgentClient | None = None,
-               model: LLMClient | None = None, max_xml: int = config.MAX_XML_BYTES) -> FastAPI:
+               model: LLMClient | None = None, max_xml: int = config.MAX_XML_BYTES,
+               downloads_dir: str = config.DOWNLOADS_DIR) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.agent = agent or AgentClient(config.AGENT_URL)
@@ -32,6 +33,7 @@ def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
     app.state.db = db
     app.state.scans_dir = scans_dir
     app.state.max_xml = max_xml
+    app.state.downloads_dir = downloads_dir
     app.state.max_batch = 4 * max_xml + 1024 * 1024
     app.state.history_lock = threading.Lock()
     app.state.history_generation = 0
@@ -62,6 +64,7 @@ def create_app(*, db: str = config.DB_PATH, scans_dir: str = config.SCANS_DIR,
     app.include_router(routes_scans.router)
     app.include_router(routes_history.router)
     app.include_router(routes_explain.router)
+    app.include_router(routes_downloads.router)
 
     @app.get("/api/{missing:path}", include_in_schema=False)
     def missing_api(missing: str):

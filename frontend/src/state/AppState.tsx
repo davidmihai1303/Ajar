@@ -4,7 +4,8 @@ import { ApiError, api, isDemo } from "../api/client";
 import type { HistoryItem, ImportResult, Lang, NetworkInfo, Scan, ScanRefusal } from "../api/types";
 import { makeT, type TFunction } from "../i18n";
 import { playAlertChime } from "../lib/audioAlert";
-import { previousComparable } from "../lib/scan";
+import { desktopBridge, type AjarNotice } from "../lib/desktop";
+import { assessment, previousComparable } from "../lib/scan";
 import { navigate } from "../router";
 
 export type FlowStep = "consent" | "admin" | "network" | "notify";
@@ -16,6 +17,8 @@ export interface AjarAnchor {
 }
 
 // Small per-viewer conveniences only (language, collapsed sidebar, one-time notices).
+const onPhone = () => typeof window !== "undefined" && (window.matchMedia?.("(max-width: 768px)").matches ?? false);
+
 const store = {
   get: (key: string) => {
     try {
@@ -63,6 +66,10 @@ interface AppState {
   openDialog: () => () => void;
   notificationsEnabled: boolean;
   enableNotifications: () => Promise<void>;
+  /** Tell the user something: Ajar popup (desktop app or desktop browser), OS notification, chime. */
+  notify: (notice: Omit<AjarNotice, "id">) => void;
+  toast: AjarNotice | null;
+  dismissToast: () => void;
   placement: AjarPlacement;
   anchor: AjarAnchor | null;
   setAnchor: (value: AjarAnchor | null) => void;
@@ -131,6 +138,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const enablingNotifRef = useRef(false);
+  const [toast, setToast] = useState<AjarNotice | null>(null);
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  // One place for every notification. In the desktop app Ajar pops up in the corner of the screen
+  // (even when the window is in the tray); in a desktop browser he pops up in the page; the OS
+  // notification is kept for a hidden tab or a phone.
+  const notify = useCallback((notice: Omit<AjarNotice, "id">) => {
+    const full: AjarNotice = { ...notice, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+    playAlertChime();
+    const bridge = desktopBridge();
+    if (bridge) {
+      bridge.notify(full);
+      return;
+    }
+    const phone = onPhone();
+    if (!phone) setToast(full);
+    if ((phone || document.hidden) && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification(full.title, { body: full.body, icon: "/ajar-192.png" });
+      } catch {
+        /* some phones only allow notifications from a service worker */
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    desktopBridge()?.setLang(lang);
+  }, [lang]);
 
   const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
     const currentPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
@@ -141,8 +176,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const saved = store.get("ajar.notifications");
     const lastPerm = store.get("ajar.browserPerm");
-    // If permissions were changed/revoked in the browser since activation, reset button state.
-    if (lastPerm && lastPerm !== currentPerm) {
+    // If permissions were changed/revoked in the browser since activation, reset button state
+    // (phones only: on a computer Ajar's popup works without the browser's permission).
+    if (lastPerm && lastPerm !== currentPerm && onPhone()) {
       store.set("ajar.notifications", "no");
       store.set("ajar.browserPerm", currentPerm);
       return false;
@@ -160,7 +196,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (permStatus.state === "granted") {
         store.set("ajar.notifications", "yes");
         setNotificationsEnabledState(true);
-      } else {
+      } else if (onPhone()) {
         store.set("ajar.notifications", "no");
         setNotificationsEnabledState(false);
       }
@@ -197,7 +233,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     }
-    playAlertChime();
 
     try {
       if (permPromise) {
@@ -205,18 +240,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (typeof Notification !== "undefined") {
         store.set("ajar.browserPerm", Notification.permission);
-        // Refused in the browser: do not show notifications as active.
-        if (Notification.permission === "denied") {
+        // Refused in the browser: a phone has no other way to notify, so it stays off there.
+        // On a computer Ajar's own popup does not need the browser's permission.
+        if (Notification.permission === "denied" && onPhone()) {
           setNotificationsEnabledState(false);
           store.set("ajar.notifications", "no");
-        }
-        if (Notification.permission === "granted") {
-          new Notification("Ajar", {
-            body: t("mobile.notifyActiveBody"),
-            icon: "/ajar-192.png",
-          });
+          return;
         }
       }
+      notify({ title: "Ajar", body: t(onPhone() ? "mobile.notifyActiveBody" : "desktop.testNotifyBody"), level: "clear" });
     } catch {
       /* ServiceWorker / mobile restriction or permission rejection fallback */
     } finally {
@@ -224,7 +256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         enablingNotifRef.current = false;
       }, 500);
     }
-  }, [t]);
+  }, [notify, t]);
 
   useEffect(() => {
     const syncConsent = (event: StorageEvent) => {
@@ -299,30 +331,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => setDialogs((count) => Math.max(0, count - 1));
   }, []);
 
-  const notifyChanges = useCallback(
+  // One notification per finished scan: the score, the worst problems and what changed.
+  const notifyScan = useCallback(
     async (previousId: string | undefined, next: Scan) => {
-      if (!previousId || !notificationsEnabled) return;
+      if (!notificationsEnabled) return;
       const generation = deletion.current;
-      try {
-        const diff = await api.diff(previousId, next.id);
-        if (generation !== deletion.current) return;
-        if (diff.devices_added.length || diff.ports_opened.length) {
-          playAlertChime();
-          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            try {
-              new Notification("Ajar", {
-                body: t("notify.changes", { devices: diff.devices_added.length, ports: diff.ports_opened.length }),
-              });
-            } catch {
-              /* ignore */
-            }
+      const high = next.findings.filter((f) => f.severity === "high").length;
+      const medium = next.findings.filter((f) => f.severity === "medium").length;
+      let body = t("desktop.scanCompletedBody", { high, medium });
+      if (previousId) {
+        try {
+          const diff = await api.diff(previousId, next.id);
+          if (generation !== deletion.current) return;
+          if (diff.devices_added.length || diff.ports_opened.length) {
+            body += " " + t("notify.changes", { devices: diff.devices_added.length, ports: diff.ports_opened.length });
           }
+        } catch {
+          /* the dashboard shows the same changes anyway */
         }
-      } catch {
-        /* the dashboard shows the same alerts anyway */
       }
+      notify({ title: t("desktop.scanCompleted", { score: next.score ?? "—" }), body, level: assessment(next) });
     },
-    [notificationsEnabled, t],
+    [notificationsEnabled, notify, t],
   );
 
   const runScan = useCallback(async () => {
@@ -348,22 +378,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const items = await loadHistory().catch(() => []);
       if (generation !== deletion.current) return;
       navigate({ name: "dashboard" });
-      void notifyChanges(previousComparable(items, result)?.id, result);
-      if (notificationsEnabled) {
-        playAlertChime();
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          try {
-            const high = result.findings.filter((f) => f.severity === "high").length;
-            const medium = result.findings.filter((f) => f.severity === "medium").length;
-            new Notification(t("desktop.scanCompleted", { score: result.score ?? "—" }), {
-              body: t("desktop.scanCompletedBody", { high, medium }),
-              icon: "/ajar-192.png",
-            });
-          } catch {
-            /* ignore */
-          }
-        }
-      }
+      void notifyScan(previousComparable(items, result)?.id, result);
       if (typeof Notification !== "undefined" && Notification.permission === "default" && !store.get("ajar.ack.notify")) {
         setFlow("notify");
       }
@@ -375,7 +390,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setScanning(false);
     }
-  }, [consentNetwork, loadHistory, notificationsEnabled, notifyChanges, refreshNetwork, t]);
+  }, [consentNetwork, loadHistory, notifyScan, refreshNetwork]);
 
   const startScanFlow = useCallback(async () => {
     if (preparingConsent.current) return;
@@ -474,6 +489,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openDialog,
     notificationsEnabled,
     enableNotifications,
+    notify,
+    toast,
+    dismissToast,
     placement,
     anchor,
     setAnchor,
