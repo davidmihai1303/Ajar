@@ -8,6 +8,7 @@ from xml.etree import ElementTree
 import httpx
 import pytest
 
+from netcheck.explain import llm
 from netcheck.explain.llm import (EvidenceDevice, EvidenceFinding, EvidencePort, LLMClient,
                                   ScanEvidence, StaticText, ask, personalize)
 
@@ -130,14 +131,78 @@ def test_same_database_fact_selectable_only_for_its_host(office):
     "Your network score is 100.", "Your printer is a Canon.", "This calls for firmware 9.5.",
     "The printer has a database on [192.168.1.10:3306].", "Call +40 721 123 456.",
     "This is CVE-2020-1234.", "Open https://example.com.", "See [http://192.168.1.10].",
-    select("d99p22"), select("score", "oops"), '{"refs":["score"],"answer":"100"}',
-    '{"refs":"score"}', '{"refs":[true]}', '{"refs":[{}]}', '[]', 'null',
-    select("d0", "d0", "d0", "d0", "d0"), "CANNOT_ANSWER",
+    select("d99p22"), '{"refs":[true]}', '{"refs":[{}]}', '[]', 'null', "CANNOT_ANSWER",
 ])
 def test_invalid_or_free_text_answer_fails_closed(reply):
-    answer = ask(fake_llm(reply), "What did the scan find?", EVIDENCE, "en")
+    answer = ask(fake_llm(reply), "Tell me about my network.", EVIDENCE, "en")
     assert answer.source == "fallback" and not answer.grounded
     assert reply not in answer.text
+
+
+@pytest.mark.parametrize("reply", [
+    select("score", "oops"), '{"refs":["score"],"answer":"100"}', '{"refs":"score"}',
+    select("score", "score", "score", "score", "score", "score", "score"),
+])
+def test_imperfect_reply_keeps_valid_ids_and_never_shows_model_text(reply):
+    answer = ask(fake_llm(reply), "Tell me about my network.", EVIDENCE, "en")
+    assert answer.source == "llm" and answer.grounded
+    assert answer.text == "The network score is 45 out of 100."
+    assert "oops" not in answer.text and '"answer"' not in answer.text
+
+
+def _many():
+    """Seven findings on seven devices: more than one answer may show."""
+    sev = ["low", "medium", "high", "info", "medium", "high", "low"]
+    findings = tuple(EvidenceFinding("TELNET_OPEN", s, f"192.168.1.{i + 2}", 23) for i, s in enumerate(sev))
+    return ScanEvidence(40, findings=findings)
+
+
+def test_too_many_selected_ids_keep_the_most_severe():
+    evidence = _many()
+    answer = ask(fake_llm(select(*[f"f{i}" for i in range(7)])), "Should I worry?", evidence, "en")
+    assert answer.grounded and answer.source == "llm"
+    assert answer.text.count("Severity") == llm.MAX_SELECTED
+    assert answer.text.index("Severity high") < answer.text.index("Severity medium") < answer.text.index("Severity low")
+    assert "Severity info" not in answer.text
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("What vulnerabilities do I have?", "en"), ("what problems are on my network", "en"),
+    ("What did the scan find?", "en"), ("Ce vulnerabilități am?", "ro"), ("Ce probleme am?", "ro"),
+])
+def test_overview_lists_every_finding_from_the_scan_without_the_model(question, lang):
+    seen = []
+    evidence = _many()
+    answer = ask(fake_llm(select("score"), seen=seen), question, evidence, lang)
+    assert answer.source == "scan" and answer.grounded and seen == []
+    assert all(f"[192.168.1.{i + 2}:23]" in answer.text for i in range(7))
+    high, low = ("ridicată", "scăzută") if lang == "ro" else ("high", "low")
+    assert answer.text.index(high) < answer.text.index(low)
+    assert ("40 din 100" if lang == "ro" else "40 out of 100") in answer.text
+
+
+def test_overview_works_with_ai_off_and_caps_long_lists():
+    findings = tuple(EvidenceFinding("TELNET_OPEN", "medium", f"10.0.0.{i}", 23) for i in range(1, 14))
+    answer = ask(LLMClient(), "What problems do I have?", ScanEvidence(0, findings=findings), "en")
+    assert answer.grounded and "13 problems" in answer.text and "3 more" in answer.text
+    assert answer.text.count("Severity") == llm.MAX_OVERVIEW
+    clean = ask(LLMClient(), "Ce probleme am?", ScanEvidence(100), "ro")
+    assert clean.grounded and "nicio problemă" in clean.text
+
+
+def test_question_about_one_device_still_goes_to_the_model():
+    seen = []
+    answer = ask(fake_llm(select("f0"), seen=seen), "What problems does 192.168.1.10 have?", EVIDENCE, "en")
+    assert answer.source == "llm" and "[192.168.1.10:9100]" in answer.text and len(seen) == 1
+
+
+@pytest.mark.parametrize("question,lang,expected", [
+    ("hi", "en", "Ask me"), ("Hello!", "en", "Ask me"), ("Salut", "ro", "Întreabă-mă"), ("bună ziua", "ro", "Întreabă-mă"),
+])
+def test_greeting_gets_a_hint_without_the_model(question, lang, expected):
+    seen = []
+    answer = ask(fake_llm(select("score"), seen=seen), question, EVIDENCE, lang)
+    assert expected in answer.text and not answer.grounded and seen == []
 
 
 @pytest.mark.parametrize("question", ["Is 213.43.4.3 safe?", "Compare 192.168.1.10 with 192.168.1.99.",
@@ -198,9 +263,8 @@ def test_personalization_uses_exact_base_steps_and_verified_context():
 
 
 @pytest.mark.parametrize("bad", [
-    "Your score is 100.", select("other-host"), select("vendor", "address"), select(),
-    '{"explanation":"Your Canon printer is fine.","fixes":"OFF"}',
-    '{"refs":["vendor"],"fixes":["Disable encryption"]}', None, [{"type":"text","text":"oops"}],
+    "Your score is 100.", select("other-host"), select(),
+    '{"explanation":"Your Canon printer is fine.","fixes":"OFF"}', None, [{"type":"text","text":"oops"}],
 ])
 def test_personalization_keeps_static_guidance_on_bad_reply(bad):
     result = personalize(fake_llm(bad), PRINTER, BASE, "en")
@@ -208,17 +272,25 @@ def test_personalization_keeps_static_guidance_on_bad_reply(bad):
     assert result.fixes == list(BASE.fixes)
 
 
+@pytest.mark.parametrize("reply", [select("vendor", "address"), '{"refs":["vendor"],"fixes":["Disable encryption"]}'])
+def test_personalization_uses_first_valid_label_and_keeps_base_steps(reply):
+    result = personalize(fake_llm(reply), PRINTER, BASE, "en")
+    assert result.source == "llm" and '"HP"' in result.explanation
+    assert result.explanation.endswith(BASE.explanation) and result.fixes == list(BASE.fixes)
+    assert "Disable encryption" not in result.explanation + " ".join(result.fixes)
+
+
 @pytest.mark.parametrize("error", [httpx.ConnectError("down"), httpx.ReadTimeout("slow")])
 def test_transport_failure_uses_local_fallbacks(error):
     client = fake_llm(error)
     assert personalize(client, PRINTER, BASE, "en").source == "static"
-    assert "not available" in ask(client, "What did my scan find?", EVIDENCE, "en").text
+    assert "not available" in ask(client, "Tell me about my network.", EVIDENCE, "en").text
 
 
 def test_unknown_answer_and_disabled_client():
     assert not ask(fake_llm(select()), "What is my password?", EVIDENCE, "ro").grounded
     client = LLMClient()
-    assert not ask(client, "What did my scan find?", EVIDENCE, "en").grounded
+    assert not ask(client, "Tell me about my network.", EVIDENCE, "en").grounded
     assert personalize(client, PRINTER, BASE, "en").explanation == BASE.explanation
 
 
