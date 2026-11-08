@@ -1,4 +1,4 @@
-.PHONY: up down test analyze-validation agent gitleaks
+.PHONY: up down test analyze-validation agent gitleaks demo demo-stop demo-check
 
 up:
 	docker compose up -d --build
@@ -17,3 +17,12 @@ agent:
 
 gitleaks:
 	gitleaks detect --source . --no-banner
+
+demo:
+	./demo.sh
+
+demo-stop:
+	./demo.sh stop
+
+demo-check:
+	./demo.sh check

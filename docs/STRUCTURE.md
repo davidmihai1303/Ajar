@@ -7,6 +7,7 @@ Overview and setup: see the main [README](../README.md). Numbers ①–⑨ match
 | File | Purpose |
 |---|---|
 | `docker-compose.yml` | App container: host network, non-root, volumes for scans (read-only), history and input |
+| `demo.sh` | Demo laptop in one command: reuses or downloads the pinned Qwen weights, builds/pulls images, starts app + Qwen + scanner agent, opens Ajar; `stop`, `status`, `check` |
 | `.env.example` | Names of the configuration variables, no values |
 | `.gitignore` | Keeps `.env`, `.api_key`, `data/`, `input/`, build output out of git |
 | `SmartHack_Setup.md` | Existing distributed llama-server setup (optional LLM backend) |

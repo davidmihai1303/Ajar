@@ -120,6 +120,7 @@ Smarthack/
 ├── README.md                  this file
 ├── SmartHack_Setup.md         existing distributed LLM setup (llama-server on the MSI)
 ├── docker-compose.yml         the app container (backend + built frontend)
+├── demo.sh                    demo laptop: app + local Qwen + scanner agent in one command
 ├── .env.example               configuration names only, no values
 ├── .gitignore                 .env, .api_key, data/, input/ are never committed
 │
@@ -210,6 +211,27 @@ python3 scanner/agent.py serve          # scanner agent (normal user, separate t
 **Build the image before the event.** The build downloads base images, Python and npm packages.
 At the venue the scanner laptop is only on the hotspot (no venue Wi-Fi, limited mobile data), so
 run `docker compose build` at home, then check that `netcheck analyze` works with the network off.
+
+### 5.4 Demo laptop: one command
+
+On the scanner laptop (Linux, Docker, NVIDIA GPU), after the one-time scanner install in 5.1:
+
+```bash
+./demo.sh            # prepare what is missing, start the app + local Qwen + scanner agent, open Ajar
+./demo.sh stop       # stop everything
+./demo.sh status     # what is running
+./demo.sh check      # backend + scanner tests, Validation Set vs official answers, gitleaks
+```
+
+`./demo.sh` reuses a verified `Qwen3.5-9B-Q4_K_M.gguf` from `~/models`, `~/Downloads` or an installed
+offline bundle (`~/ajar-*/ajar/models`), and downloads it only if none matches the pinned SHA-256.
+It pulls the pinned llama.cpp image if missing and rebuilds the app image only when the checkout
+changed. It stops older Ajar bundles that hold the same container name and ports, runs
+`runtime/qwen/start.sh`, checks the detected network, starts `scanner/agent.py serve` in the
+background (log: `data/demo/agent.log`) and opens the Ajar desktop app, or the browser if it is not
+installed (`--browser` forces the browser, `--no-open` opens nothing). It never uses sudo and never
+scans. History stays in `./data`, the model in `./models`. `./demo.sh update` runs
+`git pull --ff-only` first; do not use it after the Test Set upload.
 
 ---
 

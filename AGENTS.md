@@ -68,6 +68,7 @@ docker compose run --rm app netcheck analyze /app/tests/fixtures/validation --ou
 python3 scanner/agent.py network                 # detected network
 python3 scanner/agent.py scan --confirm          # live scan (host, after scanner/install.sh)
 gitleaks detect --source . --no-banner           # must be clean
+./demo.sh                                        # demo laptop: app + local Qwen + agent, one command (stop/status/check)
 ```
 
 ## Definition of done for any change in `analysis/`
