@@ -92,6 +92,9 @@ gitleaks detect --source . --no-banner           # must be clean
 ## LLM rules (`explain/llm.py`)
 
 - Input: only findings of the current scan. Output: statements rendered from verified evidence.
+  Exception (team decision): with `LLM_FREE_ANSWERS` on (the default) Ask shows the model's own written
+  answer from the scan facts; `LLM_FREE_ANSWERS=0` restores record-only answers. Findings, severities
+  and scores still never come from the model.
 - Never invent ports, CVEs, versions, phone numbers or vendors. Say so when the scan cannot answer.
 - Never produce or change findings, severities or scores.
 - Always fall back to `explain/static.py` on error or timeout.

@@ -69,3 +69,31 @@ def test_optional_local_model_receives_only_saved_evidence(tmp_path):
         answer = ask("What do we know about 192.168.1.7?")
         assert answer["can_answer"] and answer["available"] and "192.168.1.7" in answer["answer"]
         assert [r.url.path for r in calls] == ["/v1/models", "/v1/chat/completions"]
+
+
+def test_free_answer_through_api_gets_scan_facts_but_no_private_data(tmp_path, monkeypatch):
+    from netcheck import config
+    monkeypatch.setattr(config, "LLM_FREE_ANSWERS", True)
+    prompts = []
+
+    def respond(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": []})
+        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Port 80 on 192.168.1.7 is open."}}]})
+
+    model = LLMClient("http://127.0.0.1:8080/v1", transport=httpx.MockTransport(respond))
+    xml = b"""<nmaprun><host><status state="up"/><address addr="192.168.1.7" addrtype="ipv4"/>
+        <address addr="00:11:22:33:44:55" addrtype="mac"/><ports><port protocol="tcp" portid="80">
+        <state state="open"/><service name="http" product="PRIVATE-PRODUCT"/>
+        <script id="http-title" output="PRIVATE-PAGE-TITLE"/></port></ports></host></nmaprun>"""
+    with TestClient(create_app(db=str(tmp_path / "db"), model=model), base_url="http://localhost") as c:
+        sid = c.post("/api/scans/import", files={"files": ("fixture.xml", xml)}).json()[0]["scan_id"]
+        def ask(question):
+            return c.post("/api/ask", json={"scan_id": sid, "lang": "en", "question": question}).json()
+        assert not ask("Is 192.0.2.99 safe?")["can_answer"] and prompts == []
+        answer = ask("hi, anything open?")
+        assert answer == {"available": True, "can_answer": True, "answer": "Port 80 on 192.168.1.7 is open."}
+        assert "192.168.1.7" in prompts[0]
+        for private in ("PRIVATE-PAGE-TITLE", "PRIVATE-PRODUCT", "00:11:22:33:44:55"):
+            assert private not in prompts[0]
