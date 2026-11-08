@@ -40,6 +40,7 @@ from .evidence import (
     EvidenceDevice, EvidenceFinding, EvidencePort, ScanEvidence, answer_options, clean,
     finding_contexts, mentioned_ips, score_text,
 )
+from .grounding import invents_evidence
 
 MAX_QUESTION = 500
 MAX_OPTIONS = 128
@@ -411,12 +412,13 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
     question = clean(question, MAX_QUESTION)
     if not question:
         return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
-    model_down = False
+    model_down = rejected = False
     if config.LLM_FREE_ANSWERS and client.enabled:
         text = _free_answer(client, question, evidence, lang, history)
-        if text:
+        if text and not invents_evidence(text, question, evidence):
             return Answer(text, "llm_free", grounded=True)
-        # Empty reply: answer with the verified scan records below. Unreachable: don't call it twice.
+        rejected = bool(text)
+        # Empty reply: answer with the verified scan records below. Unreachable or rejected: don't call it twice.
         model_down = text is None
     bare = question.rstrip(" .!?")
     if _SCORE_QUESTION.fullmatch(bare):
@@ -427,6 +429,8 @@ def ask(client: LLMClient, question: str, evidence: ScanEvidence, lang: str = "r
     # "score" is offered only when the question names no device, address, port or protocol.
     if "score" in options and _OVERVIEW_QUESTION.search(question):
         return Answer(_overview(evidence, options, lang), "scan", grounded=True)
+    if rejected:
+        return Answer(_FALLBACK["cannot"][lang], "fallback", grounded=False)
     if not client.enabled or model_down:
         return Answer(_FALLBACK["unavailable"][lang], "fallback", grounded=False, unavailable=True)
     if not options:

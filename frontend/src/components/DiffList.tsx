@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import type { Explanation, ScanDiff } from "../api/types";
 import { useApp } from "../state/AppState";
 
+const portList = (ports: ScanDiff["ports_opened"]) => ports.map((p) => `${p.ip} ${p.protocol}/${p.port}`).join(", ");
+
 export default function DiffList({ diff, showScore = true }: { diff: ScanDiff; showScore?: boolean }) {
   const { t, lang } = useApp();
   const [titles, setTitles] = useState<Record<string, string>>({});
@@ -65,13 +67,13 @@ export default function DiffList({ diff, showScore = true }: { diff: ScanDiff; s
           {diff.ports_closed.length > 0 && (
             <li>
               <span className="diff-mark good" aria-hidden="true">✓</span>
-              <span className="grow">{t("history.itemPortsClosed", { count: diff.ports_closed.length })}</span>
+              <span className="grow">{t("history.itemPortsClosed", { count: diff.ports_closed.length })} <span className="muted mono">{portList(diff.ports_closed)}</span></span>
             </li>
           )}
           {diff.ports_opened.length > 0 && (
             <li>
               <span className="diff-mark bad" aria-hidden="true">!</span>
-              <span className="grow">{t("history.itemPortsOpened", { count: diff.ports_opened.length })}</span>
+              <span className="grow">{t("history.itemPortsOpened", { count: diff.ports_opened.length })} <span className="muted mono">{portList(diff.ports_opened)}</span></span>
             </li>
           )}
         </ul>

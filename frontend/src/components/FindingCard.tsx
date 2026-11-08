@@ -70,11 +70,11 @@ export default function FindingCard({
             <a href={href({ name: "device", ip: finding.ip })} className="strong" style={{ color: "var(--walnut)", textDecoration: "none" }}>
               {deviceName}
             </a>
-            <span className="muted mono" style={{ fontSize: 13 }}>IP {finding.ip}</span>
-            {device?.hostname && <span className="muted" style={{ fontSize: 13 }}>({device.hostname})</span>}
-            {device?.vendor && <span className="muted" style={{ fontSize: 13 }}>• {device.vendor}</span>}
+            <span className="muted mono">IP {finding.ip}</span>
+            {device?.hostname && <span className="muted">({device.hostname})</span>}
+            {device?.vendor && <span className="muted">• {device.vendor}</span>}
           </div>
-          <a href={href({ name: "device", ip: finding.ip })} className="link-button muted" style={{ fontSize: 13, minHeight: "auto", padding: "4px 8px" }}>
+          <a href={href({ name: "device", ip: finding.ip })} className="link-button muted" style={{ minHeight: "auto", padding: "4px 8px" }}>
             {t("dashboard.viewDevice")} →
           </a>
         </div>

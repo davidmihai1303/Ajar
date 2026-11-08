@@ -376,6 +376,59 @@ def test_free_answer_falls_back_to_scan_records(monkeypatch, reply):
     assert answer.source == "scan" and "[192.168.1.10:9100]" in answer.text
 
 
+@pytest.mark.parametrize("reply", [
+    "Close port 8080 on your printer.",
+    "Porturile 9100, 3389 sunt deschise.",
+    "Device 192.168.1.77 looks risky.",
+    "Your printer is affected by CVE-2021-44228.",
+    "Call support at +40 721 234 567 for help.",
+    "Close port: 8080.",
+    "Sunt deschise porturi 8080.",
+    "The service on tcp/8080 is risky.",
+    "TCP 8080 is open.",
+    "Check port number 8080.",
+    "192.168.1.10:631 and 192.168.1.10:23 are open.",
+    "Your printer is affected by CVE\u20112021\u201344228.",
+    "Call 0721/234.567 for help.",
+    "Upgrade OpenSSH 6.2 now.",
+    "This Cisco device is risky.",
+])
+def test_free_answer_with_invented_evidence_is_never_shown(monkeypatch, reply):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    answer = ask(fake_llm(reply), "What problems do I have?", EVIDENCE, "en")
+    assert answer.source == "scan" and reply not in answer.text
+
+
+@pytest.mark.parametrize("question, reply", [
+    ("is my printer ok?", "Port 9100 on 192.168.1.10 accepts print jobs. Port 631 is for printing too."),
+    ("is port 22 open?", "Port 22 is not open in this scan."),
+    ("is my printer ok?", "Port 9100, 2 steps are enough."),
+    ("is my printer ok?", "Ports 9100 and 631 are open on your HP printer."),
+    ("is my printer ok?", "CUPS 2.4 runs on port 631, last scanned 07.11.2026."),
+    ("is my printer ok?", "Your score is 95 and the scan is from 2026-11-07."),
+])
+def test_free_answer_grounded_in_the_scan_is_shown(monkeypatch, question, reply):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    answer = ask(fake_llm(reply), question, EVIDENCE, "en")
+    assert answer.source == "llm_free" and answer.text == reply
+
+
+def test_free_answer_cannot_confirm_a_port_the_scan_does_not_show(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    seen = []
+    answer = ask(fake_llm("Yes, port 8080 is open.", seen=seen), "is port 8080 open?", EVIDENCE, "en")
+    assert answer.source == "fallback" and "8080" not in answer.text
+    assert len(seen) == 1  # a rejected answer does not cost a second model call
+
+
+def test_free_answer_cannot_move_a_port_to_another_device(monkeypatch):
+    monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
+    other = EvidenceDevice(ip="192.168.1.1", vendor="X", open_ports=(EvidencePort(53, "tcp", "domain"),))
+    evidence = replace(EVIDENCE, devices=(*EVIDENCE.devices, other))
+    for reply in ("192.168.1.1:9100 is open.", "Port 9100 is open on 192.168.1.1."):
+        assert ask(fake_llm(reply), "What problems do I have?", evidence, "en").source == "scan"
+
+
 def test_free_answer_timeout_does_not_call_the_model_twice(monkeypatch):
     monkeypatch.setattr(llm.config, "LLM_FREE_ANSWERS", True)
     seen = []
